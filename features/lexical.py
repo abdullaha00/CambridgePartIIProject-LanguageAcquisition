@@ -33,8 +33,7 @@ def compute_lex_maps(utoks, src_lang, dst_lang):
     w2w = Word2word(src_lang, dst_lang)    
 
     for tok in utoks:
-
-
+        
         src_freq = zipf_frequency(tok, src_lang)
         
         dst_tok = w2w_translate_tok(w2w, tok, dst_lang)
