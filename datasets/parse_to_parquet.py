@@ -1,7 +1,6 @@
 import pandas as pd
-import os
 from tqdm import tqdm
-
+from data_parquet import save_parquet
 
 #schema definition
 SCHEMA = {
@@ -49,11 +48,11 @@ def parse(path: str) -> pd.DataFrame:
 
             else:
                 r=line.split()
-                tokId, tok, pos, meta, typ, rt = r[0:6]
+                tokId, tok, pos, meta, split, rt = r[0:6]
 
                 label = r[-1] if is_train else pd.NA
 
-                #ex = Exercise(tokId, tok, pos, meta, typ, rt, label)
+                #ex = Exercise(tokId, tok, pos, meta, split, rt, label)
 
                 out.append({
                     "sentence_id": sentence_idx,
@@ -63,7 +62,7 @@ def parse(path: str) -> pd.DataFrame:
                     "tok": tok.lower(),
                     "pos": pos,
                     "meta": meta, #need to process more
-                    "type": typ,
+                    "type": split,
                     "rt": rt,
                     #Exercise metadata
                     "countries": countries,
@@ -108,21 +107,18 @@ def enforce_schema(df: pd.DataFrame) -> pd.DataFrame:
         
     return df
 
-for lang in tqdm(["en_es", "es_en", "fr_en"], desc="Language"):
+for track in tqdm(["en_es", "es_en", "fr_en"], desc="language track"):
 
-    #create folder for parquet, lang combination
+    #create folder for parquet, track combination
     
-
-    for typ in tqdm(["train", "dev", "test"], desc=f"{lang} split", leave=False):
-        os.makedirs(f"parquet/{lang}/minimal", exist_ok=True)
-        os.makedirs(f"parquet/{lang}/original", exist_ok=True)
+    for split in tqdm(["train", "dev", "test"], desc=f"{track} track", leave=False):
 
         #------ parse original
-        df = parse(f"data_{lang}/{lang}.slam.20190204.{typ}")
+        df = parse(f"data_{track}/{track}.slam.20190204.{split}")
         
         # use .key file for dev data
-        if typ == "dev":
-            df_key = parse_key(f"data_{lang}/{lang}.slam.20190204.{typ}.key")
+        if split == "dev":
+            df_key = parse_key(f"data_{track}/{track}.slam.20190204.{split}.key")
 
             df = merge_with_key(df, df_key)
 
@@ -133,5 +129,6 @@ for lang in tqdm(["en_es", "es_en", "fr_en"], desc="Language"):
         dfM = df.drop(columns=["pos", "type", "meta", "rt"])
         
         # save both minimal and original to parquet
-        dfM.to_parquet(f"parquet/{lang}/minimal/{lang}_{typ}_minimal.parquet", index=False)
-        df.to_parquet(f"parquet/{lang}/original/{lang}_{typ}_original.parquet", index=False)
+
+        save_parquet(dfM, track, split, "minimal")
+        save_parquet(df, track, split, "original")
