@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datasets.load import get_parquet
+from datasets.data_parquet import get_parquet
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score

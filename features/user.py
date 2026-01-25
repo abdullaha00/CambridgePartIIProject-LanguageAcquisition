@@ -66,7 +66,20 @@ def tod_entropy(ex: pd.DataFrame) -> pd.DataFrame:
 
     return out
 
-def add_user_feats(df: pd.DataFrame) -> pd.DataFrame:
+def add_user_feats(df_train: pd.DataFrame, df_test: pd.DataFrame) -> pd.DataFrame:
+
+    # == Tag and merge into one stream
+    
+    df_train = df_train.copy()
+    df_test = df_test.copy()
+
+    df_train["is_test"] = 0
+    df_test["is_test"] = 1
+    
+    df = pd.concat([df_train, df_test], axis=0, ignore_index=True)
+
+    #==========
+    
     ex = exercise_view(df)
     ex = add_bursts(ex)
 
@@ -75,6 +88,11 @@ def add_user_feats(df: pd.DataFrame) -> pd.DataFrame:
 
     user_feats = bstats.merge(ent, on="user_id")
     
-    return df.merge(user_feats, on="user_id")
-
+    # =========
+    
+    df = df.merge(user_feats, on="user_id")
+    df_train_out = df[df["is_test"] == 0]   
+    df_test_out = df[df["is_test"] == 1]
+    
+    return df_train_out, df_test_out
 

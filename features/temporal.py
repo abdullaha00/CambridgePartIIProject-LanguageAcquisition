@@ -5,22 +5,31 @@ from collections import Counter, defaultdict
 
 rng = np.random.default_rng(seed=42)
 
-ALPHA_ERR = np.array([0.3, 0.1, 0.03, 0.01])
+ALPHA_ERR = np.array([0.3, 0.1, 0.03, 0.01], dtype=np.float32)
 K = len(ALPHA_ERR)
 
-TEST_PATH = "/home/abdullah/Documents/CambridgePartIIProject-LanguageAcquisition/parquet/en_es/minimal/en_es_test_minimal.parquet"
 
-def n_test_per_user():
-    df = pd.read_parquet(TEST_PATH)
-    return df.groupby("user_id")["sentence_id"].nunique().to_dict()
+def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
 
-def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+    # == Tag and merge into one stream
+    
+    df_train = df_train.copy()
+    df_test = df_test.copy()
 
+    df_train["is_test"] = 0
+    df_test["is_test"] = 1
+    df = pd.concat([df_train, df_test], axis=0, ignore_index=True)
+
+    
+    #=====================
+
+    user_test_n = df_test.groupby("user_id")["sentence_id"].nunique().to_dict()
+
+    #=====================
+    
     N = len(df)
     
-    user_test_n = n_test_per_user()
-    
-    # ===== OUTPUTS ===
+    # ===== OUTPUTS ====== 
 
     # UNMASKED total encounters
     ex_seen = np.zeros(N, dtype=np.int32)
@@ -63,8 +72,8 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
 
         # TOKEN/ROOT state [total enonters, last_seen_time(days), [err1, err2, ...]]
 
-        tok_state = defaultdict(lambda: [0, None, np.zeros(K)]) # tok -> [encounters, last_time_seen, [err1,err2,err3,err4]]
-        root_state = defaultdict(lambda: [0, None, np.zeros(K)]) # root -> [encounters, last_time_seen, [err1,err2,err3,err4]]]
+        tok_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # tok -> [encounters, last_time_seen, [err1,err2,err3,err4]]
+        root_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # root -> [encounters, last_time_seen, [err1,err2,err3,err4]]]
 
         # snapshots of state AFTER each exercise: list of tok/root -> [enc, time, errvec]
         tok_snaps = []
@@ -72,8 +81,14 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
         
         n = int(user_test_n.get(uid, 0))
         assert n >= 2
+
+        # IDX of train end
         
-        for eidx, ex_df in g.groupby("sentence_id", sort=False):
+        ex_g = g.groupby("sentence_id", sort=False)
+
+        train_end_idx = len(ex_g) - n - 1
+
+        for _, ex_df in ex_g:
             
             row_idxs = ex_df.index
             toks = tuple(ex_df["tok"])
@@ -84,9 +99,14 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
 
             #------ TRAIN-TIME MASK
 
-            n_back = int(rng.integers(1, n)) # 1...n-1
+            # If we are encoding test data, then 
+            # last_labeled_idx is the train data end idx
 
-            last_labeled_idx = idx - n_back
+            if idx > train_end_idx:
+                last_labeled_idx = train_end_idx
+            else:
+                n_back = int(rng.integers(1, n)) # 1...n-1
+                last_labeled_idx = idx - n_back
 
             # up-to-date snapshots
 
@@ -94,6 +114,11 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
             root_snap_total = root_snaps[idx-1] if idx > 0 else {}
 
             # masked snapshots
+
+            if last_labeled_idx >= len(tok_snaps):
+                print("last_labeled_idx >= len(tok_snaps)")
+                print(last_labeled_idx)
+                print(len(tok_snaps))
 
             tok_state_lab = tok_snaps[last_labeled_idx] if last_labeled_idx >= 0 else {}
             root_state_lab = root_snaps[last_labeled_idx] if last_labeled_idx >= 0 else {}
@@ -156,23 +181,25 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
 
             for utok, tok_df in ex_df.groupby("tok", sort=False):
                 count = len(tok_df)
-                label_mean = tok_df["label"].mean()
 
                 st = tok_state[utok]
 
                 st[0] += count    # no. encounters
                 st[1] = day      # last encounter time
-                st[2] += ALPHA_ERR * (label_mean - st[2])
+                if idx <= train_end_idx:
+                    label_mean = tok_df["label"].mean()
+                    st[2] += ALPHA_ERR * (label_mean - st[2])
         
             for root, root_df in ex_df.groupby("lemma", sort=False):
                 count = len(root_df)
-                label_mean = root_df["label"].mean()
 
                 st = root_state[root]
 
-                st[0] += count    # no. encounters
+                st[0] += count   # no. encounters
                 st[1] = day      # last encounter time
-                st[2] += ALPHA_ERR * (label_mean - st[2])
+                if idx <= train_end_idx:   
+                    label_mean = root_df["label"].mean()
+                    st[2] += ALPHA_ERR * (label_mean - st[2])
 
             # UPDATE SNAPSHOTS
 
@@ -210,4 +237,7 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # =======
 
-    return df
+    df_train_out = df[df["is_test"] == 0]
+    df_test_out = df[df["is_test"] == 1]
+
+    return df_train_out, df_test_out
