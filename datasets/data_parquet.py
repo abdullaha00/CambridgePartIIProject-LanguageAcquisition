@@ -3,12 +3,16 @@ from pathlib import Path
 
 BASE = Path("/home/abdullah/Documents/Projects/CambridgePartIIProject-LanguageAcquisition/")
 
+def parquet_exists(track: str = "en_es", split: str = "train", variant: str = "reprocessed") -> bool:
+    path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
+    return path.exists()
+
 def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False) -> pd.DataFrame:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     
     df = pd.read_parquet(path)
 
-    if subset:
+    if subset is not None:
         users = df["user_id"].drop_duplicates().iloc[:subset]
         df = df[df["user_id"].isin(users)]
 
