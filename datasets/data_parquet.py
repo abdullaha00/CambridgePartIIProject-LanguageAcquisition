@@ -3,14 +3,18 @@ from pathlib import Path
 
 BASE = Path("/home/abdullah/Documents/Projects/CambridgePartIIProject-LanguageAcquisition/")
 
-def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed") -> pd.DataFrame:
+def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False) -> pd.DataFrame:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     
     df = pd.read_parquet(path)
-    
-    # Label df with split
-    df = df.assign(split=split)
-    
+
+    if subset:
+        users = df["user_id"].drop_duplicates().iloc[:subset]
+        df = df[df["user_id"].isin(users)]
+
+    if tag_split:
+        df["split"] = split
+
     return df
 
 def save_parquet(df, track: str, split: str, variant: str):

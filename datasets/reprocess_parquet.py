@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import stanza
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from data_parquet import get_parquet, save_parquet
 
 BATCH = 256
@@ -27,7 +27,7 @@ for track in tqdm(["en_es", "es_en", "fr_en"], desc="Language"):
         eng_sents_full = []
         sentence_rowidxs = []
 
-        groups = df.groupby("sentence_id", sort=False)
+        groups = df.groupby("ex_instance_id", sort=False)
 
         for sid, g in tqdm(groups, total=groups.ngroups, desc="Processing Sentences"):
             eng_sents_full.append(" ".join(g["tok"].tolist()))

@@ -2,6 +2,7 @@ import pandas as pd
 from wordfreq import zipf_frequency
 from word2word import Word2word
 from rapidfuzz.distance import Levenshtein
+from tqdm.auto import tqdm
 
 def add_frequency(df: pd.DataFrame, lang="es") -> pd.DataFrame:
     
@@ -32,7 +33,7 @@ def compute_lex_maps(utoks, src_lang, dst_lang):
 
     w2w = Word2word(src_lang, dst_lang)    
 
-    for tok in utoks:
+    for tok in tqdm(utoks, desc="Lexical features"):
         
         src_freq = zipf_frequency(tok, src_lang)
         

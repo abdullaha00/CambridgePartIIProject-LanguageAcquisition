@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from collections import Counter, defaultdict
 
 rng = np.random.default_rng(seed=42)
@@ -23,7 +23,7 @@ def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame) -> (pd.
     
     #=====================
 
-    user_test_n = df_test.groupby("user_id")["sentence_id"].nunique().to_dict()
+    user_test_n = df_test.groupby("user_id")["ex_instance_id"].nunique().to_dict()
 
     #=====================
     
@@ -63,7 +63,7 @@ def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame) -> (pd.
     err_tok = np.zeros((N,K), dtype=np.float32)
     err_root = np.zeros((N,K), dtype=np.float32)
 
-    for uid, g in tqdm(df.groupby("user_id", sort=False)):
+    for uid, g in tqdm(df.groupby("user_id", sort=False), desc="Adding temporal features"):
         # g = g.sort_values("days") assumed
 
         # EXERCISE encounter
@@ -84,7 +84,7 @@ def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame) -> (pd.
 
         # IDX of train end
         
-        ex_g = g.groupby("sentence_id", sort=False)
+        ex_g = g.groupby("ex_instance_id", sort=False)
 
         train_end_idx = len(ex_g) - n - 1
 
@@ -237,7 +237,7 @@ def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame) -> (pd.
 
     # =======
 
-    df_train_out = df[df["is_test"] == 0]
-    df_test_out = df[df["is_test"] == 1]
+    df_train_out = df[df["is_test"] == 0].reset_index(drop=True)
+    df_test_out = df[df["is_test"] == 1].reset_index(drop=True)
 
     return df_train_out, df_test_out

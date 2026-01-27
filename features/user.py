@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from collections import Counter, defaultdict
+from tqdm.auto import tqdm
 
 def exercise_view(df: pd.DataFrame) -> pd.DataFrame:
     df["ex_id"] = df["tok_id"].str.slice(0,10).copy()
@@ -68,6 +69,8 @@ def tod_entropy(ex: pd.DataFrame) -> pd.DataFrame:
 
 def add_user_feats(df_train: pd.DataFrame, df_test: pd.DataFrame) -> pd.DataFrame:
 
+    steps = tqdm(total=6, desc="user feats")
+
     # == Tag and merge into one stream
     
     df_train = df_train.copy()
@@ -80,19 +83,19 @@ def add_user_feats(df_train: pd.DataFrame, df_test: pd.DataFrame) -> pd.DataFram
 
     #==========
     
-    ex = exercise_view(df)
-    ex = add_bursts(ex)
+    ex = exercise_view(df); steps.update(1)
+    ex = add_bursts(ex); steps.update(1)
 
-    bstats = burst_stats(ex)
-    ent = tod_entropy(ex)
+    bstats = burst_stats(ex); steps.update(1)
+    ent = tod_entropy(ex); steps.update(1)
 
-    user_feats = bstats.merge(ent, on="user_id")
+    user_feats = bstats.merge(ent, on="user_id"); steps.update(1)
     
     # =========
     
-    df = df.merge(user_feats, on="user_id")
-    df_train_out = df[df["is_test"] == 0]   
-    df_test_out = df[df["is_test"] == 1]
+    df = df.merge(user_feats, on="user_id"); steps.update(1)
+    df_train_out = df[df["is_test"] == 0].reset_index(drop=True)
+    df_test_out = df[df["is_test"] == 1].reset_index(drop=True)
     
     return df_train_out, df_test_out
 
