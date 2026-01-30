@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--subset", type=int, default=None)
 parser.add_argument("--track", type=str, default="en_es")
 parser.add_argument("--train_with_dev", action="store_true")
-parser.add_argument("--save_feats", action="store_true")
+parser.add_argument("--no_save_feats", action="store_true")
 args = parser.parse_args()
 
 #==== CONFIG
@@ -19,7 +19,7 @@ args = parser.parse_args()
 TRACK = args.track
 train_with_dev = args.train_with_dev
 SUBSET = args.subset
-SAVE_FEATS = args.save_feats
+SAVE_FEATS = not args.no_save_feats
 
 if __name__ == "__main__":
         
@@ -45,7 +45,9 @@ if __name__ == "__main__":
         df_train = get_parquet(TRACK, "train", "features_dev")
         df_test = get_parquet(TRACK, "test", "features_dev")
     else:
-        df_train, df_test = build_features(df_train, df_test, train_with_dev, save_feats=True)
+        if SAVE_FEATS:
+            print("Building features and saving...")
+        df_train, df_test = build_features(df_train, df_test, train_with_dev, save_feats=True, TRACK=TRACK)
 
     #===== TRAIN GDBT
 
