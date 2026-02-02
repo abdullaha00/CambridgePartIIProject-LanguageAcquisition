@@ -1,18 +1,24 @@
-*
+data_en_es/
+data_es_en/
+data_fr_en/
+slam_data/
+starter_code/
+parquet/
+experiments/
+runs.db
 
-!*/
+*.pdf
+*.tar.gz
+*.zip
 
-!features/
-!features/**
+.stfolder/
+.stversions/
 
-!scripts/
-!scripts/**
+**/*.ipynb
 
-!models/
-!models/**
+_*
+**/_*
 
-!datasets/
-!datasets/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
