@@ -1,10 +1,7 @@
 from datasets.data_parquet import load_train_and_eval_df
-import pandas as pd
-import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from experiments.log_db import log_run
 
 def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
 

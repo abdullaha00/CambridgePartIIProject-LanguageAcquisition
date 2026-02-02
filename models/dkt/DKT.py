@@ -1,9 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data as DataLoader
-import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from models.dkt.base import DKTBase
 
 class DKT(DKTBase):

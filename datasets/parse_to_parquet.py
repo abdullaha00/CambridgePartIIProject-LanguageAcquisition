@@ -85,17 +85,16 @@ def parse(path: str) -> pd.DataFrame:
 
         # re-order to match schema
 
-        df = df[list(SCHEMA.keys())]   
+        df = df[list(SCHEMA.keys())]
 
         return df
 
 def parse_key(path:str) -> pd.DataFrame:
-    with open(path) as f:
-        return pd.read_csv(
-            path,
-            sep= " ",
-            names=["tok_id", "label"]
-        )
+    return pd.read_csv(
+        path,
+        sep= " ",
+        names=["tok_id", "label"]
+    )
 
 def merge_with_key(df: pd.DataFrame, df_key: pd.DataFrame) -> pd.DataFrame:
     

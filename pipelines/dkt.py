@@ -1,11 +1,7 @@
 from datasets.kt.dataloaders_dkt import build_dkt_dataloaders
 from models.dkt.BertDKT import BertDKT
-import numpy as np
-import pandas as pd
 import logging
 import argparse
-from datasets.kt.df_transforms import generate_qid_map, apply_qid_map
-from torch.utils.data import DataLoader     
 import torch
 from models.dkt.DKT import DKT
 from datasets.kt.text_embeddings import embed_sentence_matrix
@@ -55,7 +51,7 @@ def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, EPOCHS):
     #==== Evaluate
 
     metrics = model.evaluate_metrics(dkt_data.eval_dataset)
-    logger.info(f"Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f", 
+    logger.info("Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f", 
                 metrics["auc"], metrics["accuracy"], metrics["f1"])
 
     return metrics

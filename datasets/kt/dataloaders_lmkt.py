@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 from transformers import AutoTokenizer
-from datasets.kt.df_transforms import collapse_to_exercise, generate_qid_map
-from datasets.kt.seq_dataset import SeqDataset, SeqDatasetLMKT, batch_pad, build_user_sequences, build_user_sequences, build_user_sequences_text, lmkt_batch_pad
+from datasets.kt.df_transforms import collapse_to_exercise
+from datasets.kt.seq_dataset import SeqDataset, SeqDatasetLMKT, build_user_sequences_text, lmkt_batch_pad
 from datasets.data_parquet import load_train_and_eval_df
 import logging
 from torch.utils.data import DataLoader

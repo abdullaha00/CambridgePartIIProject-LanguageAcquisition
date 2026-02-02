@@ -1,13 +1,7 @@
-from asyncio.log import logger
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data as DataLoader
 import numpy as np
-from sklearn.metrics import roc_auc_score
 
-from datasets.data_parquet import load_train_and_eval_df
-from datasets.kt.df_transforms import collapse_to_exercise
 from models.dkt.base import DKTBase
 
 class BertDKT(DKTBase):

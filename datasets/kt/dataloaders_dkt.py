@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Dict
 from datasets.kt.df_transforms import apply_qid_map, collapse_to_exercise, generate_qid_map
-from datasets.kt.seq_dataset import SeqDataset, batch_pad, build_user_sequences, build_user_sequences
+from datasets.kt.seq_dataset import SeqDataset, batch_pad, build_user_sequences
 from datasets.data_parquet import load_train_and_eval_df
 import logging
 from torch.utils.data import DataLoader

@@ -2,7 +2,7 @@
 import argparse
 import torch
 import numpy as np
-from experiments.log_db import log_run
+from db.log_db import log_run
 from pipelines.dkt import run_dkt_pipeline, parse_dkt_args
 from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
 from time import perf_counter

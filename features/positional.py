@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
-from collections import Counter, defaultdict
 
 def add_positional_features(df: pd.DataFrame) -> pd.DataFrame:
 

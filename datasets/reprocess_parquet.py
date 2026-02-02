@@ -1,6 +1,3 @@
-import os
-import pandas as pd
-import numpy as np
 import stanza
 from tqdm.auto import tqdm
 from data_parquet import get_parquet, save_parquet

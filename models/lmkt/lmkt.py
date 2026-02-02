@@ -1,9 +1,7 @@
-from time import time
 from typing import List, Dict, Tuple
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-import numpy as np
 from tqdm import tqdm
 import logging
 

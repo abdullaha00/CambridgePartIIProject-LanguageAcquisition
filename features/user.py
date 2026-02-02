@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from collections import Counter, defaultdict
 from tqdm.auto import tqdm
 
 def exercise_view(df: pd.DataFrame) -> pd.DataFrame:

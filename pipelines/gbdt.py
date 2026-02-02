@@ -1,12 +1,9 @@
 
-import pandas as pd
-import numpy as np
 import lightgbm as lgb
 import argparse
 from datasets.data_parquet import get_parquet, parquet_exists, load_train_and_eval_df
 from features.build_features import build_features
 from sklearn.metrics import roc_auc_score, f1_score
-from experiments.log_db import log_run
 
 #==== PARSING ARGS
 
