@@ -1,0 +1,14 @@
+numpy
+pandas
+
+scikit-learn
+lightgbm
+torch
+transformers
+
+stanza
+wordfreq
+word2word
+rapidfuzz
+
+tqdm
