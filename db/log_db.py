@@ -4,7 +4,7 @@ from datetime import datetime
 
 DB_PATH = Path("runs.db")
 
-SCHEMA = """
+RUN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS runs (
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute(SCHEMA)
+        c.execute(RUN_SCHEMA)
         conn.commit()
 
 def gen_run_id(model: str, track:str) -> str:

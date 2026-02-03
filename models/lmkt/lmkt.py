@@ -98,14 +98,25 @@ class LMKTModel(torch.nn.Module):
 
                 loss, logits = self(input_ids=ids) # (1, T, V)
 
-                probs = torch.softmax(logits[0, :, :], dim=-1) # (T, V)
+                #probs = torch.softmax(logits[0, :, :], dim=-1) # (T, V)
 
                 # Extract predictions for label positions
-                for i, pos in enumerate(label_pos):
+                for pos in label_pos:
                     label = ids[0, pos].item()
                     
                     targ = 1 if label == y_id else 0
-                    p_y = float(probs[pos-1, y_id].item())
+
+                    logit_y = logits[0, pos-1, y_id]
+
+                    logit_y = logits[0, pos-1, y_id]
+                    logit_n = logits[0, pos-1, n_id]
+
+                    # We care about the conditional P(Y | Y or N)
+
+                    p_y = torch.softmax(
+                        torch.stack([logit_y, logit_n]),
+                        dim=0
+                    )[0].item()
                     
                     all_labels.append(targ)
                     all_preds_y.append(p_y)

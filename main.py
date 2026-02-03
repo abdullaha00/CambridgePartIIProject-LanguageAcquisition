@@ -16,6 +16,10 @@ hf_logging.set_verbosity_error()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+
 
 #==== ARGUMENTS
 p = argparse.ArgumentParser()

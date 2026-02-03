@@ -81,10 +81,10 @@ def history_text(history: Sequence[Tuple[str, int]]) -> str:
     out = []
 
     for text, correct in history:
-        out.append(f"<Q>: {text} <A>: {'<Y>' if correct == 1 else '<N>'}")
+        out.append(f"<Q> {text} <A> {'<Y>' if correct == 1 else '<N>'}")
     return " ".join(out)
 
-def lmkt_batch_pad(batch, pad_token_id: int = 0):
+def lmkt_batch_pad(batch, pad_token_id: int):
     # Batch: list[Tensor(seq_len)]
 
     T_max = max(x.numel() for x in batch)

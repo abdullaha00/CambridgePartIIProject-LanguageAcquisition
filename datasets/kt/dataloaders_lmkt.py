@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, List, Tuple
 
 from transformers import AutoTokenizer
@@ -59,7 +60,8 @@ def build_lmkt_dataloaders(
     train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer)
 
     #==== Build dataloaders
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=lmkt_batch_pad)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=
+                          partial(lmkt_batch_pad, pad_token_id=tokenizer.pad_token_id))
     return LMKTDataBundle(train_dataset=train_dl, eval_histories=eval_histories, tokenizer=tokenizer)
 
 
