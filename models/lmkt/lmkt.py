@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Tuple
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -134,3 +135,104 @@ class LMKTModel(torch.nn.Module):
                 "f1": f1,
             }
 
+# ===== QUESTION GENERATION
+
+    def p_y_given_question(self, history_prefix: str, question_text: str) -> float:
+        """
+        Returns P(<Y> | history_prefix + <Q> question <A>, restricted to {<Y>, <N>})
+        """
+
+        self.eval()
+        
+        tok = self.tokenizer
+        y_id = tok.convert_tokens_to_ids(TOK_Y)
+        n_id = tok.convert_tokens_to_ids(TOK_N)
+
+        assert y_id > 0 and n_id > 0, \
+            f"Could not find special tokens: {TOK_Y}, {TOK_N}"
+
+        prompt = f"{history_prefix} <Q> {question_text} <A>"
+        encoded_ids = tok.encode(prompt, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
+
+        out = self.model(input_ids=encoded_ids)
+        logits = out.logits
+
+        logit_y = logits[0, -1, y_id]
+        logit_n = logits[0, -1, n_id]
+
+        p_y = torch.softmax(
+            torch.stack([logit_y, logit_n]),
+            dim=0
+        )[0].item()
+
+        return float(p_y)
+
+    def generate_candidate_questions( 
+        self,
+        history_prefix: str,
+        num_candidates: int = 10,
+        max_new_toks: int = 40
+    ):
+        self.eval()
+        tok = self.tokenizer
+
+        cands=[]
+
+        prompt = f"{history_prefix} {TOK_Q}"
+        enc_prompt_ids = tok.encode(prompt, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
+
+        gen = self.model.generate(
+            input_ids=enc_prompt_ids,
+            max_new_tokens=max_new_toks,
+            num_return_sequences=num_candidates,
+            do_sample=True,
+            top_k=50,
+            top_p=0.95,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id
+        ) # (num_candidates, seq_len)
+
+        for seq in gen:
+            new_seq = seq[enc_prompt_ids.shape[1]:] # remove prompt
+            text = tok.decode(new_seq, skip_special_tokens=True)
+
+            if TOK_A in text:
+                question_text = text.split(TOK_A)[0]
+            else:
+                question_text = text
+
+            if True:
+                question_text = re.sub(r"\s+", " ", question_text).strip()
+                #question_text = question_text.replace("<Q>", "").replace("</Q>", "").strip()
+            
+            cands.append(question_text.strip())
+
+        return cands
+    
+    def selection_question(
+        self,
+        history_prefix: str, 
+        candidates: list[str],
+        target_prob: float = 0.6,
+    ) -> dict:
+        
+        scored = []
+
+        for q in candidates:
+            p_y = self.p_y_given_question(history_prefix, q)       
+            scored.append((q, p_y))
+
+        scored.sort(key=lambda x: abs(x[1] - target_prob))
+
+        best_q, best_p = scored[0] if scored else (None, None)
+
+        return {
+            "question": best_q,
+            "predicted_p_y": best_p
+        }                
+
+
+
+        
+
+        
