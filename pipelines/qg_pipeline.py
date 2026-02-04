@@ -8,16 +8,16 @@ from models.lmkt.lmkt import LMKTModel
 
 logger = logging.getLogger(__name__)
 
-def parse_lmkt_args(dkt_args=None):
+def parse_qg_args(qg_args=None):
     # PARSE SPECIFIC FLAGS
-    p = argparse.ArgumentParser(description="LMKT Pipeline Args")
+    p = argparse.ArgumentParser(description="QG Pipeline Args")
     p.add_argument("--epochs", type=int, default=5)
-    args = p.parse_args(dkt_args)
+    args = p.parse_args(qg_args)
     return args
 
-def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
+def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
 
-    logger.info("Running DKT pipeline for LM-KT")
+    logger.info("Running QG pipeline")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
     
@@ -48,5 +48,13 @@ def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
     metrics = model.evaluate_metrics(lmkt_data.eval_histories)
     logger.info("Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f", 
                 metrics["auc"], metrics["accuracy"], metrics["f1"])
+
+
+    #======================== FREEZE MODEL
+
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad = False
+    
 
     return metrics

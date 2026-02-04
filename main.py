@@ -90,7 +90,8 @@ else:
 if not args.no_log:
 
     runtime_sec = perf_counter() - start_time
-    print(f"Total runtime (min): {runtime_sec / 60:.2f}")
+    runtime_min = runtime_sec / 60
+    print(f"Total runtime (min): {runtime_min:.2f}")
 
     log_run(
         model_name=model,
@@ -100,7 +101,7 @@ if not args.no_log:
         auc=metrics.get("auc"),
         accuracy=metrics.get("accuracy"),
         f1=metrics.get("f1"),
-        runtime_min=perf_counter() - start_time
+        runtime_min=runtime_min
     )
 
     logger.info("Run logged to database.")

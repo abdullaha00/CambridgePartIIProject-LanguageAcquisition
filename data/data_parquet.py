@@ -1,8 +1,6 @@
 import pandas as pd
 from pathlib import Path
-
-BASE = Path("/home/abdullah/Documents/Projects/CambridgePartIIProject-LanguageAcquisition/")
-
+from .path import BASE
 def parquet_exists(track: str = "en_es", split: str = "train", variant: str = "reprocessed") -> bool:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     return path.exists()

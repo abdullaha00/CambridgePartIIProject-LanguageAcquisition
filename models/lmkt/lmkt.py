@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 import logging
 
-from datasets.kt.seq_dataset import history_text
+from datasets.common.text_format import history_text
 
 logger = logging.getLogger(__name__)
 

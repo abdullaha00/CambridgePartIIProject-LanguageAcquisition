@@ -1,6 +1,6 @@
 import pandas as pd
 from tqdm.auto import tqdm
-from data_parquet import save_parquet
+from data.data_parquet import save_parquet
 
 
 #schema definition

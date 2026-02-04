@@ -1,10 +1,10 @@
-from datasets.kt.dataloaders_dkt import build_dkt_dataloaders
+from datasets.dkt.dataloaders_dkt import build_dkt_dataloaders
 from models.dkt.BertDKT import BertDKT
 import logging
 import argparse
 import torch
 from models.dkt.DKT import DKT
-from datasets.kt.text_embeddings import embed_sentence_matrix
+from datasets.dkt.text_embeddings import embed_sentence_matrix
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)

@@ -4,24 +4,20 @@ from functools import partial
 from typing import Dict, List, Tuple
 
 from transformers import AutoTokenizer
-from datasets.kt.df_transforms import collapse_to_exercise
-from datasets.kt.seq_dataset import SeqDataset, SeqDatasetLMKT, build_user_sequences_text, lmkt_batch_pad
-from datasets.data_parquet import load_train_and_eval_df
+from datasets.common.df_utils import collapse_to_exercise
+from datasets.common.sequence_builders import build_user_sequences_text
+from datasets.lmkt.lmkt_dataset import SeqDatasetLMKT
+from datasets.common.collate import lmkt_collate
+from data.data_parquet import load_train_and_eval_df
 import logging
 from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
 
-TOK_Q = "<Q>"
-TOK_A = "<A>"
-TOK_Y = "<Y>"
-TOK_N = "<N>"
-
-SPECIAL_TOKS = [TOK_Q, TOK_A, TOK_Y, TOK_N]
 
 @dataclass
 class LMKTDataBundle:
-    train_dataset: SeqDataset
+    train_dataset: SeqDatasetLMKT
     eval_histories: Dict[str, List[Tuple[str, int]]]
     tokenizer: AutoTokenizer
 
@@ -61,7 +57,7 @@ def build_lmkt_dataloaders(
 
     #==== Build dataloaders
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=
-                          partial(lmkt_batch_pad, pad_token_id=tokenizer.pad_token_id))
+                          partial(lmkt_collate, pad_token_id=tokenizer.pad_token_id))
     return LMKTDataBundle(train_dataset=train_dl, eval_histories=eval_histories, tokenizer=tokenizer)
 
 
