@@ -2,12 +2,11 @@
 
 from dataclasses import dataclass
 from typing import Dict
-from datasets.common.df_utils import collapse_to_exercise
-from datasets.dkt.qid import apply_qid_map, generate_qid_map
-from datasets.dkt.dkt_dataset import DKTSeqDataset
-from datasets.common.sequence_builders import build_user_sequences_qid
-from datasets.common.collate import collate_dkt
-from data.data_parquet import load_train_and_eval_df
+from models.text_kt.common.data import collapse_to_exercise
+from models.dkt.data.data import apply_qid_map, generate_qid_map
+from models.dkt.data.data import DKTSeqDataset, collate_dkt
+from models.dkt.data.data import build_user_sequences_qid
+from data_processing.data_parquet import load_train_and_eval_df
 import logging
 from torch.utils.data import DataLoader
 
@@ -29,6 +28,9 @@ def build_dkt_dataloaders(
     ) -> DKTDataBundle:
     
     #======= LOAD DATA
+
+    logger.info("Loading dataframes for track %s, variant %s, subset %s, train_with_dev=%s",
+                track, variant, subset, train_with_dev)
 
     df_train, df_eval = load_train_and_eval_df(
         track, variant, train_with_dev, subset=subset

@@ -1,10 +1,11 @@
-from datasets.dkt.dataloaders_dkt import build_dkt_dataloaders
+from models.dkt.data.build_data import build_dkt_dataloaders
+from db.records import MetricRecord
 from models.dkt.BertDKT import BertDKT
 import logging
 import argparse
 import torch
 from models.dkt.DKT import DKT
-from datasets.dkt.text_embeddings import embed_sentence_matrix
+from models.dkt.data.data import embed_sentence_matrix
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 def parse_dkt_args(dkt_args=None):
     # PARSE DKT SPECIFIC FLAGS
     p = argparse.ArgumentParser(description="GBDT Pipeline Args")
-    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("-e", "--epochs", type=int, default=5)
     
     args = p.parse_args(dkt_args)
     return args
@@ -28,7 +29,7 @@ def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, EPOCHS):
         variant="minimal",
         subset=SUBSET,
         train_with_dev=train_with_dev,
-        batch_size=64,
+        batch_size=32,
         shuffle_train=True
     )
 
@@ -43,10 +44,17 @@ def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, EPOCHS):
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # ==== Train
-    
-    for epoch in tqdm(range(EPOCHS), desc="DKT Training Epochs"):
+
+    loss_history = []
+
+    pbar = tqdm(range(EPOCHS), desc="DKT Training Epochs")
+    for epoch in pbar:
         loss = model.train_epoch(dkt_data.train_dataset, opt)
-        logger.info(f"Epoch {epoch} loss: {loss}")
+        loss_history.append(loss)
+
+        pbar.set_postfix(loss=f"{loss:.4f}")
+    
+    logger.info("DKT loss history: %s", loss_history)
     
     #==== Evaluate
 
@@ -54,4 +62,14 @@ def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, EPOCHS):
     logger.info("Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f", 
                 metrics["auc"], metrics["accuracy"], metrics["f1"])
 
-    return metrics
+    record = MetricRecord(
+        model=model_name,
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=train_with_dev,
+        variant=None,
+        auc=metrics.get("auc"),
+        acc=metrics.get("accuracy"),
+        f1=metrics.get("f1"),
+    )
+    return [record]

@@ -1,7 +1,10 @@
-from datasets.data_parquet import load_train_and_eval_df
+from data_processing.data_parquet import load_train_and_eval_df
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+import logging
+
+logger = logging.getLogger(__name__)
 
 def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
 
@@ -29,8 +32,8 @@ def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
 
     auc = roc_auc_score(Y_test, y_proba[:, 1])
 
-    print(f"model score: {score}")
-    print(f"auc: {auc}")
+    logger.info(f"model score: {score}")
+    logger.info(f"auc: {auc}")
 
     #=== RETURN LOG METRICS
 

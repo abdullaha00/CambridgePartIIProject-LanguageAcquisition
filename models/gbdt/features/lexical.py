@@ -53,7 +53,7 @@ def compute_lex_maps(utoks, src_lang, dst_lang):
 
     return trans_map, src_freq_map, dst_freq_map, lev_map
 
-def add_lexical_feats(df: pd.DataFrame, track="en_es") -> pd.DataFrame:
+def add_lexical_feats(df: pd.DataFrame, track: str) -> pd.DataFrame:
     src_lang, dst_lang = track.split("_")
 
     utoks = df["tok"].unique()

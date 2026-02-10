@@ -1,12 +1,20 @@
+import logging
 import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
 from collections import Counter, defaultdict
 
+logger = logging.getLogger(__name__)
+
 rng = np.random.default_rng(seed=42)
 
 ALPHA_ERR = np.array([0.3, 0.1, 0.03, 0.01], dtype=np.float32)
 K = len(ALPHA_ERR)
+
+
+def state_copy_deep(state: dict) -> dict:
+    """Deep-copy tok/root state dict."""
+    return {k: [v[0], v[1], v[2].copy()] for k, v in state.items()}
 
 
 def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
@@ -60,19 +68,32 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
 
         ex_count = Counter()
 
-        # TOKEN/ROOT state [total enonters, last_seen_time(days), [err1, err2, ...]]
+        # TOKEN/ROOT state [total encounters, last_seen_time(days), [err1, err2, ...]]
 
         tok_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # tok -> [encounters, last_time_seen, [err1,err2,err3,err4]]
         root_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # root -> [encounters, last_time_seen, [err1,err2,err3,err4]]]
 
-        # snapshots of state AFTER each exercise: list of tok/root -> [enc, time, errvec]
-        tok_snaps: list[dict[str, list]] = []
-        root_snaps: list[dict[str, list]]  = []
+        # Instead of storing a full state snapshot for EVERY exercise,
+        # we use a sparse dict: idx -> snapshot.  Only indices that will
+        # actually be looked up are kept.
+        #
+        # Lookups needed:
+        #   tok_snaps[idx-1]            — "previous exercise" (unmasked total)
+        #   tok_snaps[last_labeled_idx] — masked labeled history
+        #
+        # For test exercises: last_labeled_idx == train_end_idx (constant)
+        # For train exercises: last_labeled_idx in [idx-n-1 .. idx-1]
+        #   so the window is at most n behind current idx.
+        #
+        # We keep a sliding window of the last n+1 snapshots plus
+        # the train_end_idx snapshot (pinned for test-time reads).
+        tok_snaps: dict[int, dict] = {}
+        root_snaps: dict[int, dict] = {}
 
         n = int(user_test_n.get(uid, 0))
 
         if n==0:
-            print("User with no test data:", uid)
+            logger.warning("User with no test data: %s", uid)
         
         # IDX of train end
         
@@ -80,13 +101,17 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
 
         train_end_idx = len(ex_g) - n - 1
 
-        for _, ex_df in ex_g:
+        # Window size: we need snapshots from idx - n - 1  to  idx - 1
+        # so keep_window = n + 1 entries behind current idx.
+        keep_window = max(n + 1, 1)
+
+        for ex_num, (_, ex_df) in enumerate(ex_g):
             
             row_idxs = ex_df.index
             toks = tuple(ex_df["tok"])
 
             #-----
-            idx = len(tok_snaps)
+            idx = ex_num
             day = float(ex_df["days"].iloc[0])
 
             #------ TRAIN-TIME MASK
@@ -103,15 +128,15 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
                     n_back = int(rng.integers(0, n)) # 1...n-1
                     last_labeled_idx = idx - n_back - 1
 
-            # up-to-date snapshots
+            # up-to-date snapshots (previous exercise = idx-1)
 
-            tok_snap_total = tok_snaps[idx-1] if idx > 0 else {}
-            root_snap_total = root_snaps[idx-1] if idx > 0 else {}
+            tok_snap_total = tok_snaps.get(idx-1, {})
+            root_snap_total = root_snaps.get(idx-1, {})
 
             # masked snapshots
 
-            tok_state_lab = tok_snaps[last_labeled_idx] if last_labeled_idx >= 0 else {}
-            root_state_lab = root_snaps[last_labeled_idx] if last_labeled_idx >= 0 else {}
+            tok_state_lab = tok_snaps.get(last_labeled_idx, {})
+            root_state_lab = root_snaps.get(last_labeled_idx, {})
             
             # --- FEATURE READ ---
 
@@ -198,9 +223,17 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
                 # update snapshot behaviour
 
                 root_snap[root] =[st[0], st[1], st[2].copy()]
-
-            tok_snaps.append(tok_snap)
-            root_snaps.append(root_snap)
+            
+            tok_snaps[idx] = tok_snap
+            root_snaps[idx] = root_snap
+            
+            #eviction
+            evict_idx = idx - keep_window
+            if evict_idx in tok_snaps:
+                del tok_snaps[evict_idx]
+            if evict_idx in root_snaps:
+                del root_snaps[evict_idx]
+        
 
     # ======== WRITING TO DF
 

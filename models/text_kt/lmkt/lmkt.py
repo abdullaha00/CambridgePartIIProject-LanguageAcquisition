@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 import logging
 
-from datasets.common.text_format import history_text
+from models.text_kt.common.data import history_text
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,10 @@ class LMKTModel(torch.nn.Module):
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")      
 
-
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
+
+        self.model.config.loss_type = "ForCausalLMLoss"
 
         added = self.tokenizer.add_special_tokens(
             {"additional_special_tokens": SPECIAL_TOKS}
@@ -69,7 +70,7 @@ class LMKTModel(torch.nn.Module):
 
     def evaluate_metrics(self, histories: Dict[str, List[Tuple[str, int]]]):
         """
-        Evaluate AUC on eval_dl
+        Evaluate AUC on histories
         """
         self.eval()
         self.to(self.device)
@@ -87,30 +88,33 @@ class LMKTModel(torch.nn.Module):
 
         with torch.no_grad():
             for uid, hist in tqdm(histories.items(), desc="Evaluating", leave=False):
-                # hist = [(q1, y1), ...]
+                # hist = [(q1, y1), (q2, y2), ...]
 
                 if len(hist) == 0:
                     logger.warning(f"Empty history for user {uid}")
-
+                    continue
+                
+                # GENERATE FULL HISTORY ENCDOING WITH NO TRUNCUATION
                 text = history_text(hist)
-                ids = tok.encode(text, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
+                ids = tok.encode(text, add_special_tokens=False, truncation=False, return_tensors="pt").to(self.device)
                 
                 label_pos = [i for i, t in enumerate(ids[0]) if t in [y_id, n_id]]
 
-                loss, logits = self(input_ids=ids) # (1, T, V)
+                # SCORE USING PREVIOUS 1024 tokens
 
-                #probs = torch.softmax(logits[0, :, :], dim=-1) # (T, V)
-
-                # Extract predictions for label positions
                 for pos in label_pos:
+                    assert pos > 0
+
+                    start = max(0, pos-1024) 
+                    window_ids = ids[:, start:pos]
+
+                    _, logits = self(input_ids=window_ids) # (1, w, V)
+
                     label = ids[0, pos].item()
-                    
                     targ = 1 if label == y_id else 0
 
-                    logit_y = logits[0, pos-1, y_id]
-
-                    logit_y = logits[0, pos-1, y_id]
-                    logit_n = logits[0, pos-1, n_id]
+                    logit_y = logits[0, -1, y_id]
+                    logit_n = logits[0, -1, n_id]
 
                     # We care about the conditional P(Y | Y or N)
 
@@ -135,13 +139,9 @@ class LMKTModel(torch.nn.Module):
                 "f1": f1,
             }
 
-# ===== QUESTION GENERATION
+# ===== QUESTION GENERATION FUNCTIONS for lmkt
 
-    def p_y_given_question(self, history_prefix: str, question_text: str) -> float:
-        """
-        Returns P(<Y> | history_prefix + <Q> question <A>, restricted to {<Y>, <N>})
-        """
-
+    def p_y_given_question_batch(self, history_prefixes: List[str], question_texts: List[str]) -> torch.Tensor:
         self.eval()
         
         tok = self.tokenizer
@@ -150,23 +150,52 @@ class LMKTModel(torch.nn.Module):
 
         assert y_id > 0 and n_id > 0, \
             f"Could not find special tokens: {TOK_Y}, {TOK_N}"
+        
+        prompts = []
 
-        prompt = f"{history_prefix} <Q> {question_text} <A>"
-        encoded_ids = tok.encode(prompt, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
+        for hp, qt in zip(history_prefixes, question_texts):
+            
+            # Warn if q_text empty
+            if not (qt and qt.strip()):
+                logger.warning(f"Empty question_text passed to p_y_given_question")
+            
+            if hp and hp.strip():
+                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A}")
+            else:
+                prompts.append(f"{TOK_Q} {qt} {TOK_A}")
+        
+        enc_out = tok(
+            prompts, 
+            add_special_tokens=False, 
+            truncation=True, 
+            max_length=1024,
+            return_tensors="pt").to(self.device)
 
-        out = self.model(input_ids=encoded_ids)
-        logits = out.logits
+        # use FP16 on GPUs for speedup
+        with torch.autocast(device_type=self.device.type, enabled=self.device.type == "cuda"):
+            logits = self.model(**enc_out).logits # (B, T, V)
 
-        logit_y = logits[0, -1, y_id]
-        logit_n = logits[0, -1, n_id]
+        B = logits.size(0)
+        T_batch = enc_out["attention_mask"].sum(dim=1)-1 # (B, )
+
+        # We want logits[[0,1,...B-1], [T_0, T_1, ...T_{B-1}], y_id/n_id]
+        
+        batch_idx = torch.arange(B, device=self.device)
+
+        # [ logits[b_0, T_0], logits[b_1, T_1], ... logits[b_{B-1}, T_{B-1}] ] -> (B, V)
+        last_logits = logits[batch_idx, T_batch, :] # (B, V)
+        logit_yn = last_logits[:, [y_id, n_id]] # (B, 2)
 
         p_y = torch.softmax(
-            torch.stack([logit_y, logit_n]),
-            dim=0
-        )[0].item()
+           logit_yn,
+            dim=1
+        )[:, 0] # (B,) holding probs
 
-        return float(p_y)
+        return p_y
 
+#===================================== EXPERIMENTAL QG FUNCTIONS
+
+    # Complete sequence; used for testing!
     def generate_candidate_questions( 
         self,
         history_prefix: str,

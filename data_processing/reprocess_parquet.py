@@ -1,6 +1,6 @@
 import stanza
 from tqdm.auto import tqdm
-from data.data_parquet import get_parquet, save_parquet
+from data_processing.data_parquet import get_parquet, save_parquet
 
 BATCH = 256
 

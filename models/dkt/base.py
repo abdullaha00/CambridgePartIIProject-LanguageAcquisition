@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as DataLoader
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DKTBase(nn.Module):
 
@@ -96,7 +99,7 @@ class DKTBase(nn.Module):
         all_targs = torch.cat(all_targs)
 
         if len(torch.unique(all_targs)) < 2:
-            print("Warning: only one class present in y_true. AUC is not defined in this case.")
+            logger.warning("Warning: only one class present in y_true. AUC is not defined in this case.")
             return float('nan')  # AUC is not defined in this case
 
         auc = roc_auc_score(all_targs.cpu().numpy(), all_preds.cpu().numpy())

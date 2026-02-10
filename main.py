@@ -6,14 +6,25 @@ from db.log_db import log_run
 from pipelines.dkt import run_dkt_pipeline, parse_dkt_args
 from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
 from time import perf_counter
-from pipelines.lmkt_pipeline import parse_lmkt_args, run_lmkt_pipeline
+from pipelines.lmkt import parse_lmkt_args, run_lmkt_pipeline
 from pipelines.lr import run_lr_pipeline
 import logging
 from transformers import logging as hf_logging
+from rich.logging import RichHandler
+from pipelines.qg import parse_qg_args, run_qg_pipeline
+import warnings
+
+warnings.filterwarnings("ignore", message=".*loss_type.*")
 
 hf_logging.set_verbosity_error()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%H:%M:%S]",
+    handlers=[RichHandler()]
+)
+
 logger = logging.getLogger(__name__)
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -24,10 +35,10 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 #==== ARGUMENTS
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt"])
-p.add_argument("--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
-p.add_argument("--train_with_dev", action="store_true")
-p.add_argument("--subset", type=int, default=None)
+               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg"])
+p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
+p.add_argument("--train-with-dev", action="store_true")
+p.add_argument("-s", "--subset", type=int, default=None)
 p.add_argument("--no_log", action="store_true")
 args, next_args = p.parse_known_args()
 
@@ -54,17 +65,16 @@ if model == "lr":
     )
 
 elif model == "gbdt":
-    g_args = parse_gdbt_args(next_args)
-    metrics = run_gbdt_pipeline(
-        TRACK=TRACK, 
+    records = run_gbdt_pipeline(
+        track=TRACK, 
         train_with_dev=train_with_dev, 
         SUBSET=SUBSET,
-        SAVE_FEATS=not g_args.no_save_feats
+        next_args=next_args
     )
 
 elif model == "dkt" or model == "bert_dkt":
     d_args = parse_dkt_args(next_args)
-    metrics = run_dkt_pipeline(
+    records = run_dkt_pipeline(
         model_name=model,
         TRACK=TRACK,
         SUBSET=SUBSET,
@@ -74,11 +84,20 @@ elif model == "dkt" or model == "bert_dkt":
 
 elif model == "lmkt":
     lmkt_args = parse_lmkt_args(next_args)
-    metrics = run_lmkt_pipeline(
+    records = run_lmkt_pipeline(
         TRACK=TRACK,
         SUBSET=SUBSET,
         train_with_dev=train_with_dev,
         EPOCHS=lmkt_args.epochs
+    )
+
+elif model == "qg":
+    qg_args = parse_qg_args(next_args)
+    records = run_qg_pipeline(
+        TRACK=TRACK,
+        SUBSET=SUBSET,
+        train_with_dev=train_with_dev,
+        EPOCHS=qg_args.epochs
     )
 
 else:
@@ -91,17 +110,9 @@ if not args.no_log:
 
     runtime_sec = perf_counter() - start_time
     runtime_min = runtime_sec / 60
-    print(f"Total runtime (min): {runtime_min:.2f}")
+    logger.info(f"Total runtime (min): {runtime_min:.2f}")
 
-    log_run(
-        model_name=model,
-        track=TRACK,
-        train_with_dev=train_with_dev,
-        subset=SUBSET,
-        auc=metrics.get("auc"),
-        accuracy=metrics.get("accuracy"),
-        f1=metrics.get("f1"),
-        runtime_min=runtime_min
-    )
+    for rec in records:
+        log_run(rec, runtime_min)
 
-    logger.info("Run logged to database.")
+    logger.info(f" {len(records)} runs logged to database.")

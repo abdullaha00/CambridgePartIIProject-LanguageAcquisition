@@ -5,11 +5,12 @@ slam_data/
 starter_code/
 parquet/
 experiments/
-runs.db
+db/runs.db
 
 *.pdf
 *.tar.gz
 *.zip
+*.xml
 
 .stfolder/
 .stversions/
@@ -20,7 +21,6 @@ _*
 **/_*
 
 todo*
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

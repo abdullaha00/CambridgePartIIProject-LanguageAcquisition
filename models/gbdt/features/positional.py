@@ -4,8 +4,6 @@ from tqdm.auto import tqdm
 
 def add_positional_features(df: pd.DataFrame) -> pd.DataFrame:
 
-    df = df.copy()
-
     df["prev_tok"] = df.groupby("ex_instance_id")["tok"].shift(1).fillna("<NONE>")
     df["next_tok"] = df.groupby("ex_instance_id")["tok"].shift(-1).fillna("<NONE>")
 

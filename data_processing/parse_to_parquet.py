@@ -1,7 +1,7 @@
 import pandas as pd
 from tqdm.auto import tqdm
-from data.data_parquet import save_parquet
-
+from config.consts import DEV, SPLITS, TEST, TRACKS
+from data_processing.data_parquet import save_parquet
 
 #schema definition
 SCHEMA = {
@@ -79,7 +79,7 @@ def parse(path: str) -> pd.DataFrame:
         ex_id = df["tok_id"].str.slice(0,10).copy()
 
         df["ex_instance_id"] = (
-            pd.factorize(ex_id, sort=False)[0] # factorize returns codes, uniques
+            pd.factorize(ex_id, sort=False)[0] # factorize returns (codes, uniques)
             .astype("int32")
         ) 
 
@@ -119,18 +119,23 @@ def enforce_schema(df: pd.DataFrame) -> pd.DataFrame:
 # ======================
 
 if __name__ == "__main__":
-    for track in tqdm(["en_es", "es_en", "fr_en"], desc="language track"):
 
+    use_test_key = True
+
+    for track in tqdm(TRACKS, desc="language track"):
+        
         #create folder for parquet, track combination
         
-        for split in tqdm(["train", "dev", "test"], desc=f"{track} track", leave=False):
+        for split in tqdm(SPLITS, desc=f"{track} track", leave=False):
+            
+            file_path = f"data_{track}/{track}.slam.20190204.{split}"
 
             #------ parse original
-            df = parse(f"data_{track}/{track}.slam.20190204.{split}")
+            df = parse(file_path)
             
             # use .key file for dev data
-            if split == "dev":
-                df_key = parse_key(f"data_{track}/{track}.slam.20190204.{split}.key")
+            if split == DEV or (use_test_key and split == TEST):
+                df_key = parse_key(f"{file_path}.key")
                 df = merge_with_key(df, df_key)
 
             #------ adjust types
