@@ -10,3 +10,9 @@ TRACKS = [EN_ES, ES_EN, FR_EN]
 SPLITS = [TRAIN, DEV, TEST]
 
 ALL_TRACK = "all"
+
+
+# ==== DKT
+
+ITEM_TOK = "token"
+ITEM_EX = "exercise"

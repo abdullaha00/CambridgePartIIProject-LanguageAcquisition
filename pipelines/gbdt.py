@@ -5,8 +5,9 @@ import argparse
 
 import numpy as np
 from config.consts import ALL_TRACK, TRACKS
-from db.records import MetricRecord
+from db.log_db import MetricRecord
 from models.gbdt.ensemble import GBDTEnsemble
+from models.gbdt.features.lesions import LESIONS, apply_lesion
 from models.gbdt.gbdt_model import GBDTModel 
 from data_processing.data_parquet import get_parquet, parquet_exists, load_train_and_eval_df
 from models.gbdt.features.feature_load_store import get_feature_dfs
@@ -14,7 +15,7 @@ from models.gbdt.features.build_features import build_features
 from sklearn.metrics import roc_auc_score, f1_score
 from models.gbdt.ensemble import combine_probs
 import pandas as pd
-import gc, tempfile, os
+import gc
 from models.gbdt.utils import prepare_xy_lightgbm
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def parse_gdbt_args(gdbt_args=None):
                    "(smaller subsets are never saved)")
     p.add_argument("--clean-build", action="store_true", 
                    help="Force clean feature build by ignoring existing parquet files")
-    
+    p.add_argument("--lesion", type=str, default=None, choices = list(LESIONS.keys()), help="Lesion to apply to featureset")
+
+
     args = p.parse_args(gdbt_args)
     return args
 
@@ -46,6 +49,10 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
     if track != ALL_TRACK:
         #====== FEATURES =====
         df_train, df_test = get_feature_dfs(track, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
+        #====== LESION =====
+        if gbdt_args.lesion is not None:
+            df_train = apply_lesion(df_train, gbdt_args.lesion)
+            df_test = apply_lesion(df_test, gbdt_args.lesion)
         #===== TRAIN GDBT =====
         model = GBDTModel(track=track)
         X_test, y_test = model.fit(df_train, df_test)
@@ -71,6 +78,12 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         for tr in TRACKS:
             logger.info(f"Building features for {tr}...")
             df_train, df_test = get_feature_dfs(tr, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
+            
+            #LESION
+            if gbdt_args.lesion is not None:    
+                df_train = apply_lesion(df_train, gbdt_args.lesion)
+                df_test = apply_lesion(df_test, gbdt_args.lesion)
+            
             df_train["track"] = tr
             df_test["track"] = tr
             

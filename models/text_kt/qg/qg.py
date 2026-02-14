@@ -42,7 +42,6 @@ class LMKTQG(nn.Module):
             labels = labels.to(self.device)
         
         #=== token embds
-
         input_embs = self.model.get_input_embeddings()(input_ids)
 
         g_mask = (input_ids == self.g_id).int()  # (B, T)
@@ -50,7 +49,7 @@ class LMKTQG(nn.Module):
 
         diff_embs = self.diff_embd(difficulty)  # (B, emb_dim)
         
-        #scatter add (REPLACE)
+        # can use scatter
         for i in range(input_ids.size(0)):
             input_embs[i, g_pos[i], :] += diff_embs[i]
 
@@ -61,85 +60,3 @@ class LMKTQG(nn.Module):
         )
         
         return out
-
-    #=== G
-
-    @torch.no_grad()
-    def generate_question(
-        self,
-        prefix_text: str,
-        difficulty: float,
-        max_new_tokens: int = 40,
-    ):
-        self.eval()
-
-        tok = self.tokenizer
-        device = self.device
-
-        # Build input ids: prefix + <G>
-        if prefix_text:
-            prompt = f"{prefix_text} {TOK_G}"
-        else:
-            prompt = f"{TOK_G}"
-
-        input_ids = tok.encode(
-            prompt,
-            add_special_tokens=False,
-            return_tensors="pt",
-        ).to(device)
-
-        attention_mask = torch.ones_like(input_ids)
-
-        # Build embeddings
-        input_embs = self.model.get_input_embeddings()(input_ids)
-
-        # Inject difficulty at <G>
-        g_pos = (input_ids == self.g_id).nonzero(as_tuple=False)[0, 1]
-        diff = torch.tensor([[difficulty]], dtype=torch.float, device=device)
-        diff_emb = self.diff_embd(diff)
-
-        input_embs[0, g_pos, :] += diff_emb[0]
-
-        # Generate
-        gen_ids = self.model.generate(
-            inputs_embeds=input_embs,
-            attention_mask=attention_mask,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            top_p=0.95,
-            top_k=50,
-            eos_token_id=tok.eos_token_id,
-            pad_token_id=tok.pad_token_id,
-        )
-
-        # Decode only the generated part (keep special tokens for parsing)
-        new_ids = gen_ids[0, input_ids.shape[1]:]
-        raw_text = tok.decode(new_ids, skip_special_tokens=False)
-        
-        # DEBUG: Log raw generated text
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Raw generated text: {raw_text[:200]}")
-
-        # Expected format: <Q> question_text <A> (possibly more)
-        # Extract question_text between <Q> and <A>
-        if TOK_Q in raw_text and TOK_A in raw_text:
-            # Find text between <Q> and <A>
-            start = raw_text.find(TOK_Q) + len(TOK_Q)
-            end = raw_text.find(TOK_A)
-            if start < end:
-                text = raw_text[start:end]
-            else:
-                text = ""
-        elif TOK_A in raw_text:
-            # Just stop at <A>
-            text = raw_text.split(TOK_A)[0]
-        else:
-            # No special tokens found - return raw text up to eos
-            text = raw_text
-        
-        # Clean up any remaining special tokens
-        for tok_str in SPECIAL_TOKS:
-            text = text.replace(tok_str, "")
-
-        return text.strip()

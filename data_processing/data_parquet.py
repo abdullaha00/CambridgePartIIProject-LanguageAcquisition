@@ -41,15 +41,15 @@ def parquet_exists(track: str = "en_es", split: str = "train", variant: str = "r
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     return path.exists()
 
-def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False) -> pd.DataFrame:
+def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False, columns=None) -> pd.DataFrame:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     
     if subset is not None:
         # Read only user_id column first to determine which users to keep
         users = pd.read_parquet(path, columns=["user_id"])["user_id"].drop_duplicates().iloc[:subset]
-        df = pd.read_parquet(path, filters=[("user_id", "in", users.tolist())])
+        df = pd.read_parquet(path, columns=columns, filters=[("user_id", "in", users.tolist())])
     else:
-        df = pd.read_parquet(path)
+        df = pd.read_parquet(path, columns=columns)
 
     if tag_split:
         df["split"] = split
@@ -68,15 +68,15 @@ def save_parquet(df, track: str, split: str, variant: str):
     
     df.to_parquet(path, index=False)
 
-def load_train_and_eval_df(track: str, variant: str, train_with_dev: bool, subset=None):
-    df_train_data = get_parquet(track, "train", variant, subset=subset)    
-    df_dev_data = get_parquet(track, "dev", variant, subset=subset)
+def load_train_and_eval_df(track: str, variant: str, train_with_dev: bool, subset=None, columns=None):
+    df_train_data = get_parquet(track, "train", variant, subset=subset, columns=columns)    
+    df_dev_data = get_parquet(track, "dev", variant, subset=subset, columns=columns)
     
     if not train_with_dev:
         df_train = df_train_data
         df_eval = df_dev_data
     else:
-        df_test_data = get_parquet(track, "test", variant, subset=subset)
+        df_test_data = get_parquet(track, "test", variant, subset=subset, columns=columns)
         df_train = pd.concat([df_train_data, df_dev_data])
         df_eval = df_test_data
 

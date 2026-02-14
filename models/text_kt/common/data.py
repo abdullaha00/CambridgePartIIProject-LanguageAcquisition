@@ -20,7 +20,7 @@ def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
         df.groupby(["ex_instance_id", "user_id"], sort=False).agg(
             ref_ans=("tok", " ".join),
             # exercise is correct if ALL tokens are correct (label 0)
-            correct=("label", lambda x: int(np.all(x == 0)))
+            correct=("label", lambda x: int(np.any(x == 0)))
         ).reset_index()
 
     )

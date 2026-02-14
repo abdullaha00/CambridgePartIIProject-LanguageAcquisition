@@ -74,12 +74,10 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
         root_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # root -> [encounters, last_time_seen, [err1,err2,err3,err4]]]
 
         # Instead of storing a full state snapshot for EVERY exercise,
-        # we use a sparse dict: idx -> snapshot.  Only indices that will
-        # actually be looked up are kept.
+        # we use a dict: idx -> snapshot. 
         #
-        # Lookups needed:
-        #   tok_snaps[idx-1]            — "previous exercise" (unmasked total)
-        #   tok_snaps[last_labeled_idx] — masked labeled history
+        #   tok_snaps[idx-1] holds prev exercise data
+        #   tok_snaps[last_labeled_idx] holds last labeled data 
         #
         # For test exercises: last_labeled_idx == train_end_idx (constant)
         # For train exercises: last_labeled_idx in [idx-n-1 .. idx-1]
@@ -254,8 +252,8 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     df["root_first"]      = root_first
 
     for j, a in enumerate(ALPHA_ERR):
-        df[f"err_tok_{a}"] = err_tok[:, j]
-        df[f"err_root_{a}"] = err_root[:, j]
+        df[f"err_tok_{a:.3f}"] = err_tok[:, j]
+        df[f"err_root_{a:.3f}"] = err_root[:, j]
 
     # =======
 

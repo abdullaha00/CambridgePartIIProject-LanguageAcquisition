@@ -5,7 +5,7 @@ import argparse
 import torch
 from tqdm import tqdm
 
-from db.records import MetricRecord
+from db.log_db import MetricRecord
 from models.text_kt.lmkt.lmkt import LMKTModel
 
 logger = logging.getLogger(__name__)
@@ -60,4 +60,5 @@ def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
         auc=metrics.get("auc"),
         acc=metrics.get("accuracy"),
         f1=metrics.get("f1"),
+        epochs=EPOCHS
     )]

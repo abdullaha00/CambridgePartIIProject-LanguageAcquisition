@@ -12,7 +12,7 @@ class DKTBase(nn.Module):
 
     def __init__(self, num_q, emb_dim=128, head_dim=64):
         super().__init__()
-
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.rnn = nn.LSTM(emb_dim, head_dim, num_layers=2, batch_first=True)
 
         self.q_head_w = nn.Embedding(num_q, head_dim)
@@ -52,7 +52,7 @@ class DKTBase(nn.Module):
         p = self.predict_next(h, Q_targ) # (B, T-1) for (p_1, p_2, ..., p_{T-1}) 
 
         #(Q[i], A{i}) -> predict p_{i+1}
-        #mask[:, 1:] ignores pading in predicted timesteps, leaving us with p = (p_1, p_2, ..., p_{k}) and similar for A_targ
+        #mask[:, 1:] ignores padding in predicted timesteps, leaving us with p = (p_1, p_2, ..., p_{k}) and similar for A_targ
 
         seq_mask = mask[:, 1:]
 
@@ -65,6 +65,10 @@ class DKTBase(nn.Module):
 
         total, n = 0.0, 0
         for uids, Q, A, mask in dl:
+
+            Q = Q.to(self.device)
+            A = A.to(self.device)
+            mask = mask.to(self.device)
            
             opt.zero_grad()
             loss = self.next_loss(Q, A, mask)
@@ -84,6 +88,9 @@ class DKTBase(nn.Module):
 
         with torch.no_grad():
             for uids, Q, A, mask in dl:
+                Q = Q.to(self.device)
+                A = A.to(self.device)
+                mask = mask.to(self.device)
 
                 Q_in, A_in = Q[:, :-1], A[:, :-1]
 

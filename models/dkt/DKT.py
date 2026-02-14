@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from models.dkt.base import DKTBase
 
@@ -8,6 +9,7 @@ class DKT(DKTBase):
 
         # Use an embedding layer to encode (question_id, correctness) pairs
         self.embed = nn.Embedding(2*num_q, emb_dim)
+        self.to(self.device)
 
     def encode_input(self, q_ids, correct_list):
         return self.embed(2*q_ids + correct_list)

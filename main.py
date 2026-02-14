@@ -37,15 +37,24 @@ p = argparse.ArgumentParser()
 p.add_argument("model_name", 
                choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg"])
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
-p.add_argument("--train-with-dev", action="store_true")
+p.add_argument("-d", "--train-with-dev", action="store_true", default=True)
 p.add_argument("-s", "--subset", type=int, default=None)
 p.add_argument("--no_log", action="store_true")
+p.add_argument("-i","--item-level", choices=["token", "exercise"], default="token")
+p.add_argument("-e","--epochs", type=int, default=5)
+p.add_argument("--eval-every", type=int, default=1)
 args, next_args = p.parse_known_args()
 
-model = args.model_name
+MODEL = args.model_name
 TRACK = args.track
-train_with_dev = args.train_with_dev
+TRAIN_WITH_DEV = args.train_with_dev
 SUBSET = args.subset
+ITEM_LEVEL = args.item_level
+EPOCHS = args.epochs
+EVAL_EVERY = args.eval_every
+
+if EPOCHS is not None and EVAL_EVERY is None:
+    EVAL_EVERY = max(1, EPOCHS // 5)  # default to evaluating 5 times per run
 
 #===== CONFIG
 torch.manual_seed(42)
@@ -57,51 +66,51 @@ start_time = perf_counter()
 
 #========= DISPATCH
 
-if model == "lr":
+if MODEL == "lr":
     metrics = run_lr_pipeline(
         TRACK=TRACK,
         SUBSET=SUBSET,
-        train_with_dev=train_with_dev
+        train_with_dev=TRAIN_WITH_DEV
     )
 
-elif model == "gbdt":
+elif MODEL == "gbdt":
     records = run_gbdt_pipeline(
         track=TRACK, 
-        train_with_dev=train_with_dev, 
+        train_with_dev=TRAIN_WITH_DEV, 
         SUBSET=SUBSET,
         next_args=next_args
     )
 
-elif model == "dkt" or model == "bert_dkt":
-    d_args = parse_dkt_args(next_args)
+elif MODEL == "dkt" or MODEL == "bert_dkt":
     records = run_dkt_pipeline(
-        model_name=model,
+        model_name=MODEL,
         TRACK=TRACK,
         SUBSET=SUBSET,
-        train_with_dev=train_with_dev,
-        EPOCHS=d_args.epochs
+        train_with_dev=TRAIN_WITH_DEV,
+        ITEM_LEVEL=ITEM_LEVEL,
+        epochs=EPOCHS,
+        eval_every=EVAL_EVERY,
+        next_args=next_args
     )
 
-elif model == "lmkt":
-    lmkt_args = parse_lmkt_args(next_args)
+elif MODEL == "lmkt":
     records = run_lmkt_pipeline(
         TRACK=TRACK,
         SUBSET=SUBSET,
-        train_with_dev=train_with_dev,
-        EPOCHS=lmkt_args.epochs
+        train_with_dev=TRAIN_WITH_DEV,
+        EPOCHS=EPOCHS
     )
 
-elif model == "qg":
-    qg_args = parse_qg_args(next_args)
+elif MODEL == "qg":
     records = run_qg_pipeline(
         TRACK=TRACK,
         SUBSET=SUBSET,
-        train_with_dev=train_with_dev,
-        EPOCHS=qg_args.epochs
+        train_with_dev=TRAIN_WITH_DEV,
+        EPOCHS=EPOCHS
     )
 
 else:
-    raise ValueError(f"Unknown model name: {model}")
+    raise ValueError(f"Unknown model name: {MODEL}")
 
 
 #=========== LOGGING
@@ -112,7 +121,7 @@ if not args.no_log:
     runtime_min = runtime_sec / 60
     logger.info(f"Total runtime (min): {runtime_min:.2f}")
 
-    for rec in records:
-        log_run(rec, runtime_min)
+    for i, rec in enumerate(records):
+        log_run(rec, i, runtime_min)
 
     logger.info(f" {len(records)} runs logged to database.")

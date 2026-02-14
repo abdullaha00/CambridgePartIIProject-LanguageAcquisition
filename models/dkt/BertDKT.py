@@ -15,6 +15,7 @@ class BertDKT(DKTBase):
         
         self.proj = nn.Linear(self.lm_dim, emb_dim)
         self.correct_embed = nn.Embedding(2, emb_dim)
+        self.to(self.device)
 
     def encode_input(self, q_ids, correct_list):
         x_lm = self.proj(self.emb_matrix[q_ids])
