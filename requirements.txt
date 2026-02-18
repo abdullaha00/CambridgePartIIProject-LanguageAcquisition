@@ -12,3 +12,6 @@ word2word
 rapidfuzz
 
 tqdm
+
+pyarrow
+fastparquet

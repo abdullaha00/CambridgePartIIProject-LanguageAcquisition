@@ -28,6 +28,6 @@ def get_feature_dfs(track: str, subset=None, train_with_dev=False, save_feats=Tr
         save_feats = save_feats and subset is None
         logger.info(f"Computing features with saving={save_feats} and SUBSET={subset}...")
         df_train, df_test = load_train_and_eval_df(track, "reprocessed", train_with_dev, subset=subset)
-        df_train, df_test = build_features(df_train, df_test, train_with_dev, save_feats=save_feats, TRACK=track)
+        df_train, df_test = build_features(df_train, df_test, train_with_dev, save_feats=save_feats, track=track)
 
     return df_train, df_test
