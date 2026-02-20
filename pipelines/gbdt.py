@@ -53,6 +53,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
     gbdt_args = parse_gdbt_args(next_args)
     SAVE_FEATS = not gbdt_args.disable_save
     CLEAN_BUILD = gbdt_args.clean_build
+    LESION = gbdt_args.lesion
 
     if track != ALL_TRACK:
         #====== FEATURES =====
@@ -110,6 +111,9 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         tests[ALL_TRACK] = ens_model.fit_all_model(df_all_train, df_all_test)
         
         ens_out = ens_model.evaluate(tests)
+
+        per_track_metrics = ens_out.per_track_metrics
+        combined_metrics = ens_out.combined_metrics
         
         out_records = []
 
