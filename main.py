@@ -37,7 +37,7 @@ p = argparse.ArgumentParser()
 p.add_argument("model_name", 
                choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg"])
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
-p.add_argument("-d", "--train-with-dev", action="store_true", default=True)
+p.add_argument("-d", "--train-with-dev", action="store_true", default=False)
 p.add_argument("-s", "--subset", type=int, default=None)
 p.add_argument("--no_log", action="store_true")
 p.add_argument("-i","--item-level", choices=["token", "exercise"], default="token")

@@ -10,9 +10,11 @@ def build_features(df_train: pd.DataFrame, df_test: pd.DataFrame, train_with_dev
 
     df_all = pd.concat([df_train.assign(is_test=0), df_test.assign(is_test=1)], ignore_index=True)
 
-    # Convert categorical columns to plain strings so downstream .fillna() / assignment works
+    # Convert categorical columns to plain strings
     for col in df_all.select_dtypes("category").columns:
         df_all[col] = df_all[col].astype("object")
+
+    # lowercase
 
     # Temporal + user done with train/test together
     df_all = add_temporal_features_stream(df_all)

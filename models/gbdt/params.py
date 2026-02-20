@@ -68,4 +68,5 @@ DROP = {
     # raw meta
     "meta",
 
-    "translation"}
+    "translation"
+    }

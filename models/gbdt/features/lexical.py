@@ -4,7 +4,7 @@ from word2word import Word2word
 from rapidfuzz.distance import Levenshtein
 from tqdm.auto import tqdm
 
-def add_frequency(df: pd.DataFrame, lang="es") -> pd.DataFrame:
+def add_frequency(df: pd.DataFrame, lang: str) -> pd.DataFrame:
     
     utoks = df["tok"].unique()
     freq_map = {x: zipf_frequency(x, lang) for x in utoks}

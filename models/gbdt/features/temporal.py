@@ -1,3 +1,4 @@
+from bisect import bisect_right
 import logging
 import pandas as pd
 import numpy as np
@@ -10,25 +11,39 @@ rng = np.random.default_rng(seed=42)
 
 ALPHA_ERR = np.array([0.3, 0.1, 0.03, 0.01], dtype=np.float32)
 K = len(ALPHA_ERR)
+INIT_TSLAST = -99.0
+
+def ex_key_global(df: pd.DataFrame) -> np.ndarray:
+    return df["tok_id"].str.slice(0, 10).to_numpy(dtype=object)
 
 
-def state_copy_deep(state: dict) -> dict:
-    """Deep-copy tok/root state dict."""
-    return {k: [v[0], v[1], v[2].copy()] for k, v in state.items()}
+def history_lookup(history_idxs: dict, history_state: dict, key: str, targ_idx: int):
+    idxs = history_idxs.get(key)
+    if idxs is None:
+        return None
+
+    pos = bisect_right(idxs, targ_idx) - 1
+    if pos == -1:  # no history idx <= targ_idx
+        return None
+
+    return history_state[key][pos]
 
 
 def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
 
     df = df_all
-    df_test = df_all[df_all["is_test"]==1]
-
-    user_test_n = df_test.groupby("user_id")["ex_instance_id"].nunique().to_dict()
-
-    #=====================
-    
     N = len(df)
-    
-    # ===== OUTPUTS ====== 
+
+    # == use numpy indexing
+
+    tok_arr = df["tok"].to_numpy(dtype=object)
+    root_arr = df["lemma"].to_numpy(dtype=object)
+    day_arr = df["days"].to_numpy(dtype=np.float32, copy=False)
+    label_arr = df["label"].to_numpy(dtype=np.float32, copy=False)
+    is_test_arr = df["is_test"].to_numpy(dtype=np.int8, copy=False)
+    ex_key_arr = ex_key_global(df)
+
+    # ===== OUTPUTS ======
 
     # UNMASKED total encounters
     ex_seen = np.zeros(N, dtype=np.int32)
@@ -40,10 +55,9 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     root_seen_lab = np.zeros(N, dtype=np.int32)
 
     # DERIVED unlabelled encounters
-
     tok_seen_unlab = np.zeros(N, dtype=np.int32)
-    root_seen_unlab = np.zeros(N, dtype=np.int32) 
-    
+    root_seen_unlab = np.zeros(N, dtype=np.int32)
+
     # UNMASKED time since last encounter
     tok_tslast = np.full(N, -99.0, dtype=np.float32)
     root_tslast = np.full(N, -99.0, dtype=np.float32)
@@ -57,199 +71,221 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     root_first = np.zeros(N, dtype=np.float32)
 
     # MASKED error average
+    err_tok = np.zeros((N, K), dtype=np.float32)
+    err_root = np.zeros((N, K), dtype=np.float32)
 
-    err_tok = np.zeros((N,K), dtype=np.float32)
-    err_root = np.zeros((N,K), dtype=np.float32)
+    # uid -> [idx1, idx2, ...]
+    user_groups = df.groupby("user_id", sort=False).indices
 
-    for uid, g in tqdm(df.groupby("user_id", sort=False), desc="Adding temporal features"):
-        # g = g.sort_values("days") assumed
+    for uid, user_rows in tqdm(user_groups.items(), desc="Adding temporal features"):
+        U = user_rows.size
 
-        # EXERCISE encounter
+        if U == 0:
+            logger.warning("User with no data: %s", uid)
 
+        # unique ex keys for user
+        u_ex = ex_key_arr[user_rows]
+        ex_start = np.where(np.r_[True, u_ex[1:] != u_ex[:-1]])[0]
+        ex_ends = np.r_[ex_start[1:], U]
+
+        n_ex = ex_start.size
+
+        n_test = is_test_arr[user_rows[ex_start]].sum()
+        if n_test == 0:
+            logger.warning("User with no test data: %s", uid)
+
+        train_end_idx = n_ex - n_test - 1
+
+        # ===== PASS 1: FULL TEMPORAL HISTORIES and EX_SEEN with NO MASKING
         ex_count = Counter()
 
-        # TOKEN/ROOT state [total encounters, last_seen_time(days), [err1, err2, ...]]
+        tok_count = Counter()
+        tok_last_day: dict[str, float] = {}
+        tok_erravg: dict[str, np.ndarray] = {}
 
-        tok_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # tok -> [encounters, last_time_seen, [err1,err2,err3,err4]]
-        root_state = defaultdict(lambda: [0, None, np.zeros(K, dtype=np.float32)]) # root -> [encounters, last_time_seen, [err1,err2,err3,err4]]]
+        root_count = Counter()
+        root_last_day: dict[str, float] = {}
+        root_erravg: dict[str, np.ndarray] = {}
 
-        # Instead of storing a full state snapshot for EVERY exercise,
-        # we use a dict: idx -> snapshot. 
-        #
-        #   tok_snaps[idx-1] holds prev exercise data
-        #   tok_snaps[last_labeled_idx] holds last labeled data 
-        #
-        # For test exercises: last_labeled_idx == train_end_idx (constant)
-        # For train exercises: last_labeled_idx in [idx-n-1 .. idx-1]
-        #   so the window is at most n behind current idx.
-        #
-        # We keep a sliding window of the last n+1 snapshots plus
-        # the train_end_idx snapshot (pinned for test-time reads).
-        tok_snaps: dict[int, dict] = {}
-        root_snaps: dict[int, dict] = {}
+        tok_hist_idx: dict[
+            str, list[int]
+        ] = {}  # tok -> [idx1, idx2, ...] in encounter order (exercise idx)
+        tok_hist_state: dict[
+            str, list[tuple[int, float, np.ndarray]]
+        ] = {}  # tok -> [(count, last_day, errvec), ...] in encounter order
+        root_hist_idx: dict[str, list[int]] = {}
+        root_hist_state: dict[str, list[tuple[int, float, np.ndarray]]] = {}
 
-        n = int(user_test_n.get(uid, 0))
+        # Iterate over each exercise
+        for idx, (start, end) in enumerate(zip(ex_start, ex_ends)):
+            is_train = idx <= train_end_idx
 
-        if n==0:
-            logger.warning("User with no test data: %s", uid)
-        
-        # IDX of train end
-        
-        ex_g = g.groupby("ex_instance_id", sort=False)
+            row_idxs = user_rows[start:end]  # now in global df idx space
 
-        train_end_idx = len(ex_g) - n - 1
+            ex_toks = tok_arr[row_idxs]
+            ex_roots = root_arr[row_idxs]
+            ex_labels = label_arr[row_idxs]
 
-        # Window size: we need snapshots from idx - n - 1  to  idx - 1
-        # so keep_window = n + 1 entries behind current idx.
-        keep_window = max(n + 1, 1)
+            toks_tuple = tuple(ex_toks)
+            day = day_arr[row_idxs[0]]  # all rows in ex have same day
 
-        for ex_num, (_, ex_df) in enumerate(ex_g):
-            
-            row_idxs = ex_df.index
-            toks = tuple(ex_df["tok"])
+            ex_seen[row_idxs] = ex_count[toks_tuple]
+            ex_count[toks_tuple] += 1
 
-            #-----
-            idx = ex_num
-            day = float(ex_df["days"].iloc[0])
+            tok_agg: dict[str, list[int]] = {}  # tok -> [count, label_sum]
+            root_agg: dict[str, list[int]] = {}  # tok -> [count, label_sum]
 
-            #------ TRAIN-TIME MASK
+            # == AGGREGATE COUNTS AND LABELS
+            for tok, root, label in zip(ex_toks, ex_roots, ex_labels):
+                # -- counts, labels
+                if tok in tok_agg:
+                    tok_agg[tok][0] += 1
+                    if is_train:
+                        tok_agg[tok][1] += label
+                else:
+                    tok_agg[tok] = [1, label if is_train else 0]
 
-            # If we are encoding test data, then 
-            # last_labeled_idx is the train data end idx
+                if root in root_agg:
+                    root_agg[root][0] += 1
+                    if is_train:
+                        root_agg[root][1] += label
+                else:
+                    root_agg[root] = [1, label if is_train else 0]
 
-            if idx > train_end_idx:
+            # UPDATE TOKEN/ROOT STATE FOLLOWING AGGREGATION
+            for tok, (count, label_sum) in tok_agg.items():
+                tok_count[tok] += count
+                tok_last_day[tok] = day
+
+                # -- ERRVEC
+                errvec = tok_erravg.get(tok)
+                if errvec is None:
+                    errvec = np.zeros(K, dtype=np.float32)
+                    tok_erravg[tok] = errvec
+                if is_train:
+                    label_mean = label_sum / count
+                    errvec += ALPHA_ERR * (label_mean - errvec)
+
+                if tok not in tok_hist_idx:
+                    tok_hist_idx[tok] = [idx]
+                    tok_hist_state[tok] = [(tok_count[tok], day, errvec.copy())]
+                else:
+                    tok_hist_idx[tok].append(idx)
+                    tok_hist_state[tok].append((tok_count[tok], day, errvec.copy()))
+
+            for root, (count, label_sum) in root_agg.items():
+                root_count[root] += count
+                root_last_day[root] = day
+
+                # -- ERRVEC
+                errvec = root_erravg.get(root)
+                if errvec is None:
+                    errvec = np.zeros(K, dtype=np.float32)
+                    root_erravg[root] = errvec
+                if is_train:
+                    label_mean = label_sum / count
+                    errvec += ALPHA_ERR * (label_mean - errvec)
+
+                if root not in root_hist_idx:
+                    root_hist_idx[root] = [idx]
+                    root_hist_state[root] = [(root_count[root], day, errvec.copy())]
+                else:
+                    root_hist_idx[root].append(idx)
+                    root_hist_state[root].append((root_count[root], day, errvec.copy()))
+
+        # =========== PASS 2: MASKING
+        # At this point, we have full history available
+        for idx, (start, end) in enumerate(zip(ex_start, ex_ends)):
+            row_idxs = user_rows[start:end]  # now in global df idx space
+
+            ex_toks = tok_arr[row_idxs]
+            ex_roots = root_arr[row_idxs]
+            ex_labels = label_arr[row_idxs]
+
+            day = day_arr[row_idxs[0]]  # all rows in ex have same day
+
+            # if test, we see lables up to train_end_idx
+            # if train, we mask with n_back in [1, n_test-1]
+            is_test = idx > train_end_idx
+            if is_test:
                 last_labeled_idx = train_end_idx
             else:
-                if n == 0:
+                if n_test == 0:
                     last_labeled_idx = idx - 1
                 else:
-                    n_back = int(rng.integers(0, n)) # 1...n-1
+                    n_back = int(rng.integers(0, n_test))  # 1...n-1
                     last_labeled_idx = idx - n_back - 1
 
-            # up-to-date snapshots (previous exercise = idx-1)
+            for row, tok, root in zip(row_idxs, ex_toks, ex_roots):
+                # ===== UPDATE UNMASKED
+                tok_prev_state = history_lookup(
+                    tok_hist_idx, tok_hist_state, tok, idx - 1
+                )
 
-            tok_snap_total = tok_snaps.get(idx-1, {})
-            root_snap_total = root_snaps.get(idx-1, {})
-
-            # masked snapshots
-
-            tok_state_lab = tok_snaps.get(last_labeled_idx, {})
-            root_state_lab = root_snaps.get(last_labeled_idx, {})
-            
-            # --- FEATURE READ ---
-
-            # UNMASKED exercise count
-            ex_seen[row_idxs] = ex_count[toks]
-
-            for r, tok, root in zip(row_idxs, ex_df["tok"], ex_df["lemma"]):
-                
-                # ===== UNMASKED total history
-
-                if tok not in tok_snap_total: # First encounter
-                    tok_first[r] = 1.0
-                    tok_seen[r] = 0
-                    tok_tslast[r] = -99.0
+                if tok_prev_state is None:
+                    tok_first[row] = 1.0
                 else:
-                    count, time_last = tok_snap_total[tok][:2] 
-                    tok_seen[r] = count
-                    tok_tslast[r] = day - float(time_last)
+                    count_prev, day_prev, errvec_prev = tok_prev_state
+                    tok_seen[row] = count_prev
+                    tok_tslast[row] = day - day_prev
 
-                if root not in root_snap_total: # First encounter
-                    root_first[r] = 1.0
-                    root_seen[r] = 0
-                    root_tslast[r] = -99.0
+                root_prev_state = history_lookup(
+                    root_hist_idx, root_hist_state, root, idx - 1
+                )
+                if root_prev_state is None:
+                    root_first[row] = 1.0
                 else:
-                    count, time_last = root_snap_total[root][:2] 
-                    root_seen[r] = count
-                    root_tslast[r] = day - float(time_last)
+                    count_prev, day_prev, errvec_prev = root_prev_state
+                    root_seen[row] = count_prev
+                    root_tslast[row] = day - day_prev
 
-                # ==== MASKED labeled history
+                # ===== UPDATE MASKED
+                if last_labeled_idx >= 0:
+                    tok_prev_state_lab = history_lookup(
+                        tok_hist_idx, tok_hist_state, tok, last_labeled_idx
+                    )
+                    if tok_prev_state_lab is not None:
+                        count_prev_lab, day_prev_lab, errvec_prev_lab = (
+                            tok_prev_state_lab
+                        )
 
-                if tok not in tok_state_lab: # First encounter
-                    tok_seen_lab[r] = 0
-                    tok_tslast_lab[r] = -99.0
-                else:
-                    count, time_last, errvec = tok_state_lab[tok] 
-                    tok_seen_lab[r] = count
-                    tok_tslast_lab[r] = day - float(time_last)
-                    err_tok[r, :] = errvec
+                        tok_seen_lab[row] = count_prev_lab
+                        tok_tslast_lab[row] = day - day_prev_lab
+                        err_tok[row, :] = errvec_prev_lab
 
-                if root not in root_state_lab: # First encounter
-                    root_seen_lab[r] = 0
-                    root_tslast_lab[r] = -99.0
-                else:
-                    count, time_last, errvec = root_state_lab[root] 
-                    root_seen_lab[r] = count
-                    root_tslast_lab[r] = day - float(time_last)
-                    err_root[r, :] = errvec
+                    root_prev_state_lab = history_lookup(
+                        root_hist_idx, root_hist_state, root, last_labeled_idx
+                    )
+                    if root_prev_state_lab is not None:
+                        count_prev_lab, day_prev_lab, errvec_prev_lab = (
+                            root_prev_state_lab
+                        )
 
-                # === derived === 
+                        root_seen_lab[row] = count_prev_lab
+                        root_tslast_lab[row] = day - day_prev_lab
+                        err_root[row, :] = errvec_prev_lab
 
-                tok_seen_unlab[r] = tok_seen[r] - tok_seen_lab[r]
-                root_seen_unlab[r] = root_seen[r] - root_seen_lab[r]
-            
-            # ====== UPDATING INTERNAL COUNTERS (UNMASKED) AND SNAPSHOT
-
-            tok_snap = tok_snap_total.copy()
-            root_snap = root_snap_total.copy()
-
-            ex_count[toks] += 1
-
-            for utok, tok_df in ex_df.groupby("tok", sort=False):
-                count = len(tok_df)
-                st = tok_state[utok]
-
-                st[0] += count    # no. encounters
-                st[1] = day      # last encounter time
-                if idx <= train_end_idx:
-                    label_mean = tok_df["label"].mean()
-                    st[2] += ALPHA_ERR * (label_mean - st[2])
-
-                # update snapshot value
-                tok_snap[utok] = [st[0], st[1], st[2].copy()]
-        
-            for root, root_df in ex_df.groupby("lemma", sort=False):
-                count = len(root_df)
-                st = root_state[root]
-
-                st[0] += count   # no. encounters
-                st[1] = day      # last encounter time
-                if idx <= train_end_idx:   
-                    label_mean = root_df["label"].mean()
-                    st[2] += ALPHA_ERR * (label_mean - st[2])
-                
-                # update snapshot behaviour
-
-                root_snap[root] =[st[0], st[1], st[2].copy()]
-            
-            tok_snaps[idx] = tok_snap
-            root_snaps[idx] = root_snap
-            
-            #eviction
-            evict_idx = idx - keep_window
-            if evict_idx in tok_snaps:
-                del tok_snaps[evict_idx]
-            if evict_idx in root_snaps:
-                del root_snaps[evict_idx]
-        
+                # UNLABELED DERIVED
+                tok_seen_unlab[row] = tok_seen[row] - tok_seen_lab[row]
+                root_seen_unlab[row] = root_seen[row] - root_seen_lab[row]
 
     # ======== WRITING TO DF
 
-    df["ex_seen"]         = ex_seen
-    df["tok_seen"]        = tok_seen
-    df["root_seen"]       = root_seen
-    df["tok_seen_lab"]    = tok_seen_lab
-    df["root_seen_lab"]   = root_seen_lab
-    df["tok_seen_unlab"]  = tok_seen_unlab
+    df["ex_seen"] = ex_seen
+    df["tok_seen"] = tok_seen
+    df["root_seen"] = root_seen
+    df["tok_seen_lab"] = tok_seen_lab
+    df["root_seen_lab"] = root_seen_lab
+    df["tok_seen_unlab"] = tok_seen_unlab
     df["root_seen_unlab"] = root_seen_unlab
 
-    df["tok_tslast"]      = tok_tslast
-    df["root_tslast"]     = root_tslast
-    df["tok_tslast_lab"]  = tok_tslast_lab
+    df["tok_tslast"] = tok_tslast
+    df["root_tslast"] = root_tslast
+    df["tok_tslast_lab"] = tok_tslast_lab
     df["root_tslast_lab"] = root_tslast_lab
 
-    df["tok_first"]       = tok_first
-    df["root_first"]      = root_first
+    df["tok_first"] = tok_first
+    df["root_first"] = root_first
 
     for j, a in enumerate(ALPHA_ERR):
         df[f"err_tok_{a:.3f}"] = err_tok[:, j]
@@ -259,7 +295,12 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame): 
-    df_all = pd.concat([df_train.assign(is_test=0), df_test.assign(is_test=1)], ignore_index=True)
+
+def add_temporal_features(df_train: pd.DataFrame, df_test: pd.DataFrame):
+    df_all = pd.concat(
+        [df_train.assign(is_test=0), df_test.assign(is_test=1)], ignore_index=True
+    )
     df_all = add_temporal_features_stream(df_all)
-    
+    df_train_out = df_all[df_all["is_test"] == 0].reset_index(drop=True)
+    df_test_out = df_all[df_all["is_test"] == 1].reset_index(drop=True)
+    return df_train_out, df_test_out

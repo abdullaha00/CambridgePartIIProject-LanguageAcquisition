@@ -11,6 +11,7 @@ def exercise_view(df: pd.DataFrame) -> pd.DataFrame:
     return ex
 
 def add_bursts(ex: pd.DataFrame) -> pd.DataFrame:
+    # New burst if its been more than 1 hour since last exercise encounter
     ex["dt_hours"] = ex.groupby("user_id")["days"].diff() * 24
     ex["new_burst"]  = ex["dt_hours"].isna() | (ex["dt_hours"] >= 1)
     ex["burst_id"] = ex.groupby("user_id")["new_burst"].cumsum() - 1

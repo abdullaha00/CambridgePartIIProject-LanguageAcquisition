@@ -16,6 +16,7 @@ from sklearn.metrics import roc_auc_score, f1_score
 from models.gbdt.ensemble import combine_probs
 import pandas as pd
 import gc
+from models.gbdt.params import CAT_FEATS
 from models.gbdt.utils import prepare_xy_lightgbm
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,13 @@ def parse_gdbt_args(gdbt_args=None):
 
 #========== GDBT PIPELINE
 
+def cast_cats(df_train, df_test, cat_cols=CAT_FEATS):
+    for col in cat_cols:
+        df_train[col] = df_train[col].astype("category")
+        cats = df_train[col].cat.categories # (indexed [item0, item1, ...])
+        df_test[col] = pd.Categorical(df_test[col], categories=cats)
+    return df_train, df_test
+
 def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_args=None):
 
     logger.info(f"Running GBDT pipeline for track {track} with train_with_dev={train_with_dev} and SUBSET={SUBSET}")
@@ -49,6 +57,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
     if track != ALL_TRACK:
         #====== FEATURES =====
         df_train, df_test = get_feature_dfs(track, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
+        df_train, df_test = cast_cats(df_train, df_test)
         #====== LESION =====
         if gbdt_args.lesion is not None:
             df_train = apply_lesion(df_train, gbdt_args.lesion)
@@ -105,37 +114,37 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         out_records = []
 
         for tr in TRACKS:
-            tr_mets = ens_out.per_track_metrics[tr]
-            comb_mets = ens_out.combined_metrics[tr]
+            tr_mets = per_track_metrics[tr]
+            comb_mets = combined_metrics[tr]
             out_records.append(MetricRecord(
                 model="gbdt",
                 track=tr,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant=None,
+                variant=LESION, 
                 auc=tr_mets.get("auc"),
                 acc=tr_mets.get("accuracy"),
                 f1=tr_mets.get("f1"),
             ))
             out_records.append(MetricRecord(
-                model="gbdt",
+                model="gbdt_ens",
                 track=tr,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant="ensemble",
+                variant=LESION,
                 auc=comb_mets.get("auc"),
                 acc=comb_mets.get("accuracy"),
                 f1=comb_mets.get("f1"),
             ))
 
-        if ens_out.per_track_metrics.get(ALL_TRACK) is not None:
-            all_mets = ens_out.per_track_metrics[ALL_TRACK]
+        if per_track_metrics.get(ALL_TRACK) is not None:
+            all_mets = per_track_metrics[ALL_TRACK]
             out_records.append(MetricRecord(
-                model="gbdt",
+                model="gbdt_ens",
                 track=ALL_TRACK,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant=None,
+                variant=LESION,
                 auc=all_mets.get("auc"),
                 acc=all_mets.get("accuracy"),
                 f1=all_mets.get("f1"),

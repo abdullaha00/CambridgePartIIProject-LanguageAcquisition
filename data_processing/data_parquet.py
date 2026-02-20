@@ -13,16 +13,11 @@ STORED_CAT_COLS = {
 }
 
 def downcast_df(df: pd.DataFrame) -> pd.DataFrame:
-   
     for col in df.columns:
         dtype = df[col].dtype
-
-        # Cast cats
-        if col in STORED_CAT_COLS:
-                df[col] = df[col].astype("category")
         
         # Downcast integers
-        elif is_integer_dtype(dtype):
+        if is_integer_dtype(dtype):
             col_min, col_max = df[col].min(), df[col].max()
 
             for t in [np.int8, np.int16, np.int32]:
@@ -41,42 +36,49 @@ def parquet_exists(track: str = "en_es", split: str = "train", variant: str = "r
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     return path.exists()
 
-def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False, columns=None) -> pd.DataFrame:
+# can pass either subset (get first n users) or user_filter (list of user_ids to include)
+def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False, columns=None, user_filter=None) -> pd.DataFrame:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     
     if subset is not None:
         # Read only user_id column first to determine which users to keep
         users = pd.read_parquet(path, columns=["user_id"])["user_id"].drop_duplicates().iloc[:subset]
         df = pd.read_parquet(path, columns=columns, filters=[("user_id", "in", users.tolist())])
+    elif user_filter is not None:
+        df = pd.read_parquet(path, columns=columns, filters=[("user_id", "in", user_filter.tolist())])
     else:
         df = pd.read_parquet(path, columns=columns)
 
     if tag_split:
         df["split"] = split
-
-    df = downcast_df(df)
+    if variant.startswith("features_"):
+        df = downcast_df(df)
     return df
 
 def save_parquet(df, track: str, split: str, variant: str):
     
+    # downcast df to save space
+    df = downcast_df(df)
+    
     # ensure folder exists
     parent_path = BASE / "parquet" / track / variant
     parent_path.mkdir(parents=True, exist_ok=True)
-    
+
     # path to save parquet
     path = parent_path / f"{track}_{split}_{variant}.parquet"
     
     df.to_parquet(path, index=False)
 
 def load_train_and_eval_df(track: str, variant: str, train_with_dev: bool, subset=None, columns=None):
-    df_train_data = get_parquet(track, "train", variant, subset=subset, columns=columns)    
-    df_dev_data = get_parquet(track, "dev", variant, subset=subset, columns=columns)
+    df_train_data = get_parquet(track, "train", variant, subset=subset, columns=columns)
+    train_users = df_train_data["user_id"].unique()    
+    df_dev_data = get_parquet(track, "dev", variant, user_filter=train_users, columns=columns)
     
     if not train_with_dev:
         df_train = df_train_data
         df_eval = df_dev_data
     else:
-        df_test_data = get_parquet(track, "test", variant, subset=subset, columns=columns)
+        df_test_data = get_parquet(track, "test", variant, user_filter=train_users, columns=columns)
         df_train = pd.concat([df_train_data, df_dev_data])
         df_eval = df_test_data
 

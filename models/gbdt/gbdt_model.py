@@ -1,8 +1,10 @@
 from lightgbm import LGBMClassifier
+import lightgbm as lgb
 import pandas as pd
 from sklearn.metrics import f1_score, roc_auc_score
 from models.gbdt.params import NYU_LGBM_PARAMS
 from models.gbdt.utils import prepare_xy_lightgbm
+from tqdm.auto import tqdm
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,11 +26,43 @@ class GBDTModel:
         self.feat_cols = feat_cols
         self.cat_cols = cat_cols
 
+        n_estimators = NYU_LGBM_PARAMS[self.track]["n_estimators"]
+
         self.model = LGBMClassifier(
             **NYU_LGBM_PARAMS[self.track],
+            verbose=1,
         )
 
-        self.model.fit(X_train, y_train, categorical_feature=self.cat_cols)
+        logger.info(f"Fitting GBDT for track={self.track}"
+                    f"({X_train.shape[0]:,} rows, {len(feat_cols)} feats, "
+                    f"{len(cat_cols)} cat, {n_estimators} rounds)")
+
+        with tqdm(total=n_estimators, desc=f"GBDT [{self.track}]", unit="round") as pbar:
+            
+            #CALLBACK for progress bar
+            def callback(lgb_env):
+                pbar.update(1)
+                if lgb_env.evaluation_result_list:
+                    # returns [(dataset, metric, value, is_higher_better), ...]
+                    _, metric, val, _ = lgb_env.evaluation_result_list[0]
+                    pbar.set_postfix_str(f"{self.track}_{metric}={val:.4f}")
+                    # if (lgb_env.iteration +1) % 25 == 0 or lgb_env.iteration == 0:
+                    #     logger.info(f"[iter {lgb_env.iteration + 1:>4d}] eval {self.track}_{metric}={val:.4f}")
+            
+            self.model.fit(
+                X_train, y_train,
+                categorical_feature=self.cat_cols,
+                eval_set=[(X_test, y_test)],
+                eval_names=["eval"],
+                eval_metric="auc",
+                callbacks=[
+                    callback,
+                    lgb.early_stopping(stopping_rounds=100, first_metric_only=True, verbose=False),
+                ],
+            )
+
+        if getattr(self.model, "best_iteration_", None):
+            logger.info("Best iteration for %s: %s", self.track, self.model.best_iteration_)
 
         return X_test, y_test
         
