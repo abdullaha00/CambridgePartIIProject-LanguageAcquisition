@@ -14,6 +14,8 @@ from rich.logging import RichHandler
 from pipelines.qg import parse_qg_args, run_qg_pipeline
 import warnings
 
+from pipelines.sdkt import run_sdkt_pipeline
+
 warnings.filterwarnings("ignore", message=".*loss_type.*")
 
 hf_logging.set_verbosity_error()
@@ -35,7 +37,8 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 #==== ARGUMENTS
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg"])
+               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt"],
+               help="Which model to run")
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
 p.add_argument("-d", "--train-with-dev", action="store_true", default=False)
 p.add_argument("-s", "--subset", type=int, default=None)
@@ -107,6 +110,17 @@ elif MODEL == "qg":
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
         EPOCHS=EPOCHS
+    )
+
+elif MODEL == "sdkt" or MODEL == "vdkt":
+    records = run_sdkt_pipeline(
+        model_name=MODEL,
+        TRACK=TRACK,
+        SUBSET=SUBSET,
+        train_with_dev=TRAIN_WITH_DEV,
+        EPOCHS=EPOCHS,
+        eval_every=EVAL_EVERY,
+        next_args=next_args
     )
 
 else:
