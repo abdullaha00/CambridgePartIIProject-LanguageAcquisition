@@ -31,10 +31,6 @@ def build_features(df_train: pd.DataFrame, df_test: pd.DataFrame, train_with_dev
     # and use a global exercise key
     df_all["ex_key"] = df_all["tok_id"].str.slice(0, 10)
 
-    # Convert categorical columns to plain strings
-    for col in df_all.select_dtypes("category").columns:
-        df_all[col] = df_all[col].astype("object")
-
     # lowercase
 
     # Temporal + user done with train/test together
