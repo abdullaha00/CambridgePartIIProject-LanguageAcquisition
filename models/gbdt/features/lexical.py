@@ -4,6 +4,19 @@ from word2word import Word2word
 from rapidfuzz.distance import Levenshtein
 from tqdm.auto import tqdm
 
+AOA_PATH = "data/AoA_51715_words.csv"
+
+def get_aoa_map(path=AOA_PATH) -> dict:
+    
+    aoa_df = pd.read_csv(path, encoding="latin-1")
+    lemma_vals = aoa_df["AoA_Kup_lem"]
+
+    aoa_vals = lemma_vals.fillna(aoa_df["AoA_Kup"])
+
+    aoa_map = dict(zip(aoa_df["Word"], aoa_vals))
+
+    return aoa_map
+
 def add_frequency(df: pd.DataFrame, lang: str) -> pd.DataFrame:
     
     utoks = df["tok"].unique()
@@ -29,7 +42,6 @@ def compute_lex_maps(utoks, src_lang, dst_lang):
     src_freq_map = {}
     dst_freq_map = {}
     lev_map = {}
-    #tok_aoa = {}
 
     w2w = Word2word(src_lang, dst_lang)    
 
@@ -50,20 +62,24 @@ def compute_lex_maps(utoks, src_lang, dst_lang):
         src_freq_map[tok] = src_freq
         dst_freq_map[tok] = dst_freq
         lev_map[tok] = lev_frac
+    
+    aoa_map = get_aoa_map(AOA_PATH)
 
-    return trans_map, src_freq_map, dst_freq_map, lev_map
+    return trans_map, src_freq_map, dst_freq_map, lev_map, aoa_map
 
 def add_lexical_feats(df: pd.DataFrame, track: str) -> pd.DataFrame:
     src_lang, dst_lang = track.split("_")
 
     utoks = df["tok"].unique()
 
-    trans_map, src_freq_map, dst_freq_map, lev_map = compute_lex_maps(utoks, src_lang, dst_lang)
+    trans_map, src_freq_map, dst_freq_map, lev_map, aoa_map = compute_lex_maps(utoks, src_lang, dst_lang)
 
     df["translation"] = df["tok"].map(trans_map)
     df["src_freq"] = df["tok"].map(src_freq_map)
     df["dst_freq"] = df["tok"].map(dst_freq_map)
     df["lev_distance"] = df["tok"].map(lev_map)
+    df["aoa"] = df["tok"].map(aoa_map).fillna(0.0)
+    df["tok_len"] = df["tok"].str.len()
 
     return df
 

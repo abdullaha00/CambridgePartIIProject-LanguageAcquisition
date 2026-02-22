@@ -1,9 +1,13 @@
 
 import logging
+import os
+import threading
+import time
 import lightgbm as lgb
 import argparse
 
 import numpy as np
+import psutil
 from config.consts import ALL_TRACK, TRACKS
 from db.log_db import MetricRecord
 from models.gbdt.ensemble import GBDTEnsemble
@@ -21,6 +25,18 @@ from models.gbdt.utils import prepare_xy_lightgbm
 
 logger = logging.getLogger(__name__)
 
+#===
+def monitor_memory(interval=5):
+    process = psutil.Process(os.getpid())
+    while True:
+        mem = process.memory_info().rss / (1024**3)
+        with open("memory.log", "a") as f:
+            f.write(f"{time.time()},{mem:.2f} GB\n")
+        time.sleep(interval)
+
+threading.Thread(target=monitor_memory, daemon=True).start()
+
+
 #==== PARSING ARGS
 
 def parse_gdbt_args(gdbt_args=None):
@@ -30,7 +46,7 @@ def parse_gdbt_args(gdbt_args=None):
                    help="Disable saving computed features for disk when full dataset is used" \
                    "(smaller subsets are never saved)")
     p.add_argument("--clean-build", action="store_true", 
-                   help="Force clean feature build by ignoring existing parquet files")
+                   help="Force clean feature build by ignoring existing parquet files", default=True)
     p.add_argument("--lesion", type=str, default=None, choices = list(LESIONS.keys()), help="Lesion to apply to featureset")
 
 
@@ -58,7 +74,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
     if track != ALL_TRACK:
         #====== FEATURES =====
         df_train, df_test = get_feature_dfs(track, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
-        df_train, df_test = cast_cats(df_train, df_test)
+        #df_train, df_test = cast_cats(df_train, df_test)
         #====== LESION =====
         if gbdt_args.lesion is not None:
             df_train = apply_lesion(df_train, gbdt_args.lesion)

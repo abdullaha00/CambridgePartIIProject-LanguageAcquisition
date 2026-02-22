@@ -3,10 +3,9 @@ import numpy as np
 from tqdm.auto import tqdm
 
 def exercise_view(df: pd.DataFrame) -> pd.DataFrame:
-    df["ex_id"] = df["tok_id"].str.slice(0,10).copy()
     ex = (
-        df[["user_id", "ex_id", "days"]]
-        .drop_duplicates(["user_id", "ex_id"])
+        df[["user_id", "ex_key", "days"]]
+        .drop_duplicates(["user_id", "ex_key"])
     )
     return ex
 

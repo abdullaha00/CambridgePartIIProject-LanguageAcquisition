@@ -63,7 +63,7 @@ DROP = {
     "label", "is_test", 
     
     # identifiers
-    "ex_instance_id", "tok_id", "ex_id",
+    "ex_instance_id", "tok_id", "ex_id", "ex_key",
 
     # raw meta
     "meta",

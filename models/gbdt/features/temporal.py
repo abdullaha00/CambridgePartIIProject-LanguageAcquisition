@@ -13,9 +13,6 @@ ALPHA_ERR = np.array([0.3, 0.1, 0.03, 0.01], dtype=np.float32)
 K = len(ALPHA_ERR)
 INIT_TSLAST = -99.0
 
-def ex_key_global(df: pd.DataFrame) -> np.ndarray:
-    return df["tok_id"].str.slice(0, 10).to_numpy(dtype=object)
-
 
 def history_lookup(history_idxs: dict, history_state: dict, key: str, targ_idx: int):
     idxs = history_idxs.get(key)
@@ -41,7 +38,7 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     day_arr = df["days"].to_numpy(dtype=np.float32, copy=False)
     label_arr = df["label"].to_numpy(dtype=np.float32, copy=False)
     is_test_arr = df["is_test"].to_numpy(dtype=np.int8, copy=False)
-    ex_key_arr = ex_key_global(df)
+    ex_key_arr = df["ex_key"].to_numpy(dtype=object)
 
     # ===== OUTPUTS ======
 
