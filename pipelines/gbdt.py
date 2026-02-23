@@ -22,6 +22,8 @@ import pandas as pd
 import gc
 from models.gbdt.params import CAT_FEATS
 from models.gbdt.utils import prepare_xy_lightgbm
+from pipelines.common.checkpointing import save_lgbm
+from pipelines.common.common import mk_record
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,6 @@ def monitor_memory(interval=5):
         time.sleep(interval)
 
 threading.Thread(target=monitor_memory, daemon=True).start()
-
 
 #==== PARSING ARGS
 
@@ -84,20 +85,23 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         X_test, y_test = model.fit(df_train, df_test)
         #===== EVALUATE =====
         metrics = model.evaluate(X_test, y_test)
-        records = [MetricRecord(
-            model="gbdt",
+        records = [mk_record(
+            model_name="gbdt",
             track=track,
             subset=SUBSET,
             train_with_dev=train_with_dev,
-            variant=None,
-            auc=metrics.get("auc"),
-            acc=metrics.get("accuracy"),
-            f1=metrics.get("f1"),
-        )]
+            metrics=metrics,
+            variant=LESION
+            )]
+    
+        #== SAVING
+        if SUBSET is None:
+            save_lgbm(model.model, records[0])
+            
         return records
     
-
     else:
+
         logger.info("Running GBDT ensemble pipeline for all tracks")
 
         tr_dfs = {}
@@ -105,7 +109,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             logger.info(f"Building features for {tr}...")
             df_train, df_test = get_feature_dfs(tr, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
             
-            #LESION
+            # LESION
             if gbdt_args.lesion is not None:    
                 df_train = apply_lesion(df_train, gbdt_args.lesion)
                 df_test = apply_lesion(df_test, gbdt_args.lesion)
@@ -136,40 +140,40 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         for tr in TRACKS:
             tr_mets = per_track_metrics[tr]
             comb_mets = combined_metrics[tr]
-            out_records.append(MetricRecord(
-                model="gbdt",
+            out_records.append(
+                mk_record(
+                    model_name="gbdt",
+                    track=tr,
+                    subset=SUBSET,
+                    train_with_dev=train_with_dev,
+                    metrics=tr_mets,
+                    variant=LESION,
+                )
+            )
+            out_records.append(mk_record(
+                model_name="gbdt_ens",
                 track=tr,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant=LESION, 
-                auc=tr_mets.get("auc"),
-                acc=tr_mets.get("accuracy"),
-                f1=tr_mets.get("f1"),
-            ))
-            out_records.append(MetricRecord(
-                model="gbdt_ens",
-                track=tr,
-                subset=SUBSET,
-                train_with_dev=train_with_dev,
+                metrics=comb_mets,
                 variant=LESION,
-                auc=comb_mets.get("auc"),
-                acc=comb_mets.get("accuracy"),
-                f1=comb_mets.get("f1"),
             ))
 
         if per_track_metrics.get(ALL_TRACK) is not None:
             all_mets = per_track_metrics[ALL_TRACK]
-            out_records.append(MetricRecord(
-                model="gbdt_ens",
+            out_records.append(mk_record(
+                model_name="gbdt_ens",
                 track=ALL_TRACK,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
                 variant=LESION,
-                auc=all_mets.get("auc"),
-                acc=all_mets.get("accuracy"),
-                f1=all_mets.get("f1"),
+                metrics=all_mets,
             ))
 
+        #== SAVING
+        if SUBSET is None:
+            for rec in out_records:
+                save_lgbm(model.model, rec)
         return out_records
 
 # """
