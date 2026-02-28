@@ -8,13 +8,17 @@ from models.utils import compute_metrics
 logger = logging.getLogger(__name__)
 
 class SDKTModel(nn.Module):
-    def __init__(self, num_toks, meta_vocab_sizes, emb_dim=128, hid_dim=256, meta_emb_dim=16, num_layers=1, dropout=0.1):
+    def __init__(self, num_toks, meta_vocab_sizes, emb_dim=128, hid_dim=256, meta_emb_dim=16, num_layers=1, dropout=0.2, emb_matrix=None):
         super().__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tok_emb = nn.Embedding(num_toks, emb_dim)
 
-        self.t_emb = nn.Embedding(num_toks + 2, emb_dim, padding_idx=0) # +2 for UNK and padding
+        if emb_matrix is not None:
+            assert emb_matrix.shape == (num_toks + 2, emb_dim), f"Embedding matrix shape {emb_matrix.shape} does not match expected shape {(num_toks + 2, emb_dim)}"
+            self.t_emb = nn.Embedding.from_pretrained(torch.tensor(emb_matrix, dtype=torch.float), freeze=False, padding_idx=0)
+        else:
+            self.t_emb = nn.Embedding(num_toks + 2, emb_dim, padding_idx=0) # +2 for UNK and padding
         self.a_emb = nn.Embedding(2, emb_dim)
 
         self.meta_embs = nn.ModuleDict()
@@ -121,14 +125,17 @@ class SDKTModel(nn.Module):
         m_emb = self.embed_meta(dec_m) # (B, T_dec, total_meta_emb_dim)
     
         prev_a = last_enc_a # (B,) 
-        
+
         preds = []
+
+        h, c = enc_h, enc_c
+         
         for t in range(T_dec):
             prev_a_emb = self.a_emb(prev_a) # (B, emb_dim)
             x_t = torch.cat([t_emb[:, t, :], m_emb[:, t, :], prev_a_emb], dim=-1) # (B, dec_input_dim)
 
             # step with sequence length = 1
-            out, (h,c) = self.decoder_lstm(x_t.unsqueeze(1), (enc_h, enc_c)) # out: (B, 1, hid_dim)
+            out, (h,c) = self.decoder_lstm(x_t.unsqueeze(1), (h, c)) # out: (B, 1, hid_dim)
             h_t = out.squeeze(1) # (B, hid_dim)
             
             pred_input = torch.cat([t_emb[:, t, :], m_emb[:, t, :], h_t], dim=-1) # (B, pred_input_dim)
@@ -185,8 +192,8 @@ class SDKTModel(nn.Module):
         for batch in dl:
             # Move batch to device
             batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else 
-                     {k2: v2.to(self.device) for k2, v2 in v.items()} if isinstance(v, dict) else v 
-                     for k, v in batch.items()}
+                     {k2: v2.to(self.device) for k2, v2 in v.items()} if isinstance(v, dict) else 
+                     v for k, v in batch.items()}
             
             with torch.no_grad():
                 preds, targets, mask = self(batch, teacher_forcing=teacher_forcing)

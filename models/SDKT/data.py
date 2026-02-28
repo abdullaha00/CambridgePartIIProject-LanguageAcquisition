@@ -92,8 +92,8 @@ class SDKTTrainDataset(Dataset):
             "enc_q": torch.from_numpy(lemma_seq[:k]),
             "enc_m": {col: torch.from_numpy(ids[:k]) for col, ids in meta_ids.items()},
             "enc_a": torch.from_numpy(label_seq[:k]),
-            "dec_q": torch.from_numpy(lemma_seq[k-1:-1]), # teacher
-            "dec_m": {col: torch.from_numpy(ids[k-1:-1]) for col, ids in meta_ids.items()},
+            "dec_q": torch.from_numpy(lemma_seq[k:]), # teacher
+            "dec_m": {col: torch.from_numpy(ids[k:]) for col, ids in meta_ids.items()},
             "dec_a": torch.from_numpy(label_seq[k:]),
             "enc_last_a": torch.tensor(label_seq[k-1], dtype=torch.long)
         }
