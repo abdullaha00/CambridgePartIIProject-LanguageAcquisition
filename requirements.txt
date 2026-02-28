@@ -15,3 +15,6 @@ tqdm
 
 pyarrow
 fastparquet
+
+tabulate
+shutil

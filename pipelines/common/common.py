@@ -14,6 +14,7 @@ def mk_record(
     metrics: dict[str, float],
     variant: str,
     epochs: int | None = None,
+    tag: str | None = None,
 ) -> MetricRecord:
     return MetricRecord(
         model=model_name,
@@ -25,4 +26,5 @@ def mk_record(
         auc=float(metrics.get("auc", float("nan"))),
         acc=float(metrics.get("accuracy", float("nan"))),
         f1=float(metrics.get("f1", float("nan"))),
+        tag=tag,
     )

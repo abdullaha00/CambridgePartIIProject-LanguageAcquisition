@@ -17,6 +17,7 @@ class MetricRecord:
     f1: float
     variant: Optional[str] = None
     epochs: Optional[int] = None
+    tag: Optional[str] = None
 
 RUN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS runs (
     track TEXT,
     subset INTEGER,
     variant TEXT,
+    tag TEXT,
     epochs INTEGER,
     train_with_dev BOOLEAN,
     auc REAL,
@@ -41,7 +43,7 @@ def init_db():
         c.execute(RUN_SCHEMA)
         conn.commit()
 
-def gen_run_id(model: str, variant: str, track:str, index: int) -> str:
+def gen_run_id(model: str, variant: Optional[str], track:str, index: int) -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if variant:
         return f"{model}_{track}_{variant}_{ts}_{index}"
@@ -62,12 +64,12 @@ def log_run(
         c = conn.cursor()
         c.execute(
             """
-            INSERT INTO runs (run_id, model_type, track, subset, train_with_dev, variant, epochs, auc, accuracy, f1, runtime_min)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (run_id, model_type, track, subset, train_with_dev, variant, tag, epochs, auc, accuracy, f1, runtime_min)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, 
 
             (run_id, record.model, record.track,
-              record.subset, record.train_with_dev, record.variant, record.epochs,
+              record.subset, record.train_with_dev, record.variant, record.tag, record.epochs,
               record.auc, record.acc, record.f1, runtime_min))
     
         conn.commit()
