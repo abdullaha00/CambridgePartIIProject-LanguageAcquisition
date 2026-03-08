@@ -7,7 +7,8 @@ import torch
 from tqdm import tqdm
 import logging 
 from typing import Sequence, Tuple
-from .tokens import TOK_Q, TOK_A, TOK_Y, TOK_N
+
+from .tokens import TOK_Q, TOK_A, TOK_Y, TOK_N, TOK_BOS
 
 def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
     
@@ -15,37 +16,50 @@ def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
     if df["label"].isna().any():
         raise ValueError("Some labels are missing; cannot collapse to exercise level.")
 
+    ex_key = df["tok_id"].str.slice(0, 10)
+    df["ex_key"] = ex_key
+
     return (
 
-        df.groupby(["ex_instance_id", "user_id"], sort=False).agg(
-            ref_ans=("tok", " ".join),
+        df.groupby(["ex_key", "user_id"], sort=False).agg(
+            #prompt=("tok", " ".join),
             # exercise is correct if ALL tokens are correct (label 0)
-            correct=("label", lambda x: int(np.any(x == 0)))
+            correct=("label", lambda x: int(np.all(x == 0)))
         ).reset_index()
 
     )
 
-def build_user_sequences_text(df_ex: pd.DataFrame) -> dict:
+def merge_with_prompts(df_ex: pd.DataFrame, df_prompt: pd.DataFrame) -> pd.DataFrame:
+
+    df = df_ex.merge(df_prompt, on="ex_key", how="left")
+
+    if df["prompt"].isna().any():
+        missing = df[df["prompt"].isna()]["ex_inst_idx"].unique()
+        raise ValueError(f"Missing prompts for exercise ids: {missing}")
+
+    return df
+
+def build_user_sequences_text(df_ex: pd.DataFrame) -> Dict[str, List[Tuple[str, int]]]:
     """
     Converts exercise-level dataframe to per ordered histories
     Returns:
-        histories[user_id] = [(ref_ans+text, correct01), ...] in time-order
+        histories[user_id] = [(prompt+text, correct01), ...] in time-order
     """
     
     histories: Dict[str, List[Tuple[str, int]]] = {}
 
     for uid, g in tqdm(df_ex.groupby("user_id", sort=False), desc="Building user histories", leave=False):
-        ref_ans_list = g["ref_ans"].tolist()
+        prompt_list = g["prompt"].tolist()
         correct_list = g["correct"].tolist()
 
-        histories[uid] = list(zip(ref_ans_list, correct_list))
+        histories[str(uid)] = list(zip(prompt_list, correct_list))
     
     return histories
 
 def history_text(history: Sequence[Tuple[str, int]]) -> str:
     """
-    Composes history text from sequence of (ref_ans, correct01)
-    (ref_ans, correct01) -> <Q> ref_ans <A> <Y/N> <Q> ref_ans <A> <Y/N> ..."
+    Composes history text from sequence of (prompt, correct01)
+    (prompt, correct01) -> <BOS> <Q> prompt <A> <Y/N> <Q> prompt <A> <Y/N> ...
 
     """
     
@@ -53,4 +67,5 @@ def history_text(history: Sequence[Tuple[str, int]]) -> str:
 
     for text, correct in history:
         out.append(f"{TOK_Q} {text} {TOK_A} {TOK_Y if correct == 1 else TOK_N}")
-    return " ".join(out)
+    body = " ".join(out)
+    return f"{TOK_BOS} {body}"

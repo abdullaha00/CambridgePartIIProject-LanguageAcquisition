@@ -7,21 +7,17 @@ from tqdm import tqdm
 import logging
 
 from models.text_kt.common.data import history_text
+from models.text_kt.common.tokens import TOK_BOS, TOK_EOS, TOK_N, TOK_Y, TOK_Q, TOK_A, TOK_PAD
 
 logger = logging.getLogger(__name__)
 
-TOK_Q = "<Q>"
-TOK_A = "<A>"
-TOK_Y = "<Y>"
-TOK_N = "<N>"
-
-SPECIAL_TOKS = [TOK_Q, TOK_A, TOK_Y, TOK_N]
+BODY_TOKS = [TOK_Q, TOK_A, TOK_Y, TOK_N]
 
 class LMKTModel(torch.nn.Module):
     def __init__(self, model_name: str = "gpt2",) -> None:
         super().__init__()
         
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")      
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")          
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -29,11 +25,12 @@ class LMKTModel(torch.nn.Module):
         self.model.config.loss_type = "ForCausalLMLoss"
 
         added = self.tokenizer.add_special_tokens(
-            {"additional_special_tokens": SPECIAL_TOKS}
+            {
+                "bos_token": TOK_BOS,
+                "eos_token": TOK_EOS,
+                "pad_token": TOK_PAD, # GPT2 has no pad token so we use our own
+                "additional_special_tokens": BODY_TOKS}
         )
-
-        # GPT2 has no pad token; we can use eos token as pad token as a replacement
-        self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Resize token embeddings for new special tokens
         if added:
@@ -68,7 +65,7 @@ class LMKTModel(torch.nn.Module):
         avg_loss = total_loss / len(dataloader)
         return avg_loss
 
-    def evaluate_metrics(self, histories: Dict[str, List[Tuple[str, int]]]):
+    def evaluate_metrics(self, histories: Dict[str, List[Tuple[str, int]]], eval_pref_ns: Dict[str, int]):
         """
         Evaluate AUC on histories
         """
@@ -85,6 +82,7 @@ class LMKTModel(torch.nn.Module):
 
         all_labels = []
         all_preds_y = []
+        all_preds_n = []
 
         with torch.no_grad():
             for uid, hist in tqdm(histories.items(), desc="Evaluating", leave=False):
@@ -98,11 +96,21 @@ class LMKTModel(torch.nn.Module):
                 text = history_text(hist)
                 ids = tok.encode(text, add_special_tokens=False, truncation=False, return_tensors="pt").to(self.device)
                 
-                label_pos = [i for i, t in enumerate(ids[0]) if t in [y_id, n_id]]
+                # We do not evaluate on the train prefix of the sequene
 
+                assert uid in eval_pref_ns, f"User {uid} not in eval_pref_ns"
+                pref_n = eval_pref_ns[uid]
+
+                all_label_pos = [i for i, t in enumerate(ids[0]) if t in [y_id, n_id]]
+
+                # The first pref_n exercises are for training; each exercise contributes one label 
+                # so we skip the first pref_n labels
+
+                eval_label_idxs = all_label_pos[pref_n:] 
+                                
                 # SCORE USING PREVIOUS 1024 tokens
 
-                for pos in label_pos:
+                for pos in eval_label_idxs:
                     assert pos > 0
 
                     start = max(0, pos-1024) 
@@ -113,23 +121,31 @@ class LMKTModel(torch.nn.Module):
                     label = ids[0, pos].item()
                     targ = 1 if label == y_id else 0
 
-                    logit_y = logits[0, -1, y_id]
-                    logit_n = logits[0, -1, n_id]
+                    last_tok_sm = torch.softmax(logits[0, -1, :], dim=0)
 
-                    # We care about the conditional P(Y | Y or N)
+                    # logit_y = logits[0, -1, y_id]
+                    # logit_n = logits[0, -1, n_id]
 
-                    p_y = torch.softmax(
-                        torch.stack([logit_y, logit_n]),
-                        dim=0
-                    )[0].item()
+                    # # We care about the conditional P(Y | Y or N)
+
+                    # p_y = torch.softmax(
+                    #     torch.stack([logit_y, logit_n]),
+                    #     dim=0
+                    # )[0].item()
                     
                     all_labels.append(targ)
-                    all_preds_y.append(p_y)
+                    all_preds_y.append(last_tok_sm[y_id].item())
+                    all_preds_n.append(last_tok_sm[n_id].item())
+
 
             #===== METRIC CALCULATION =====
-
+            
+            # USE FULL SOFTMAX DISTRIBUTION
             auc = roc_auc_score(all_labels, all_preds_y)
             preds = (torch.tensor(all_preds_y) >= 0.5).long()
+
+            # USE P(Y) > P(N)
+            preds = (torch.tensor(all_preds_y) > torch.tensor(all_preds_n)).long()
             accuracy = accuracy_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
             f1 = f1_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
 
@@ -151,6 +167,9 @@ class LMKTModel(torch.nn.Module):
         assert y_id > 0 and n_id > 0, \
             f"Could not find special tokens: {TOK_Y}, {TOK_N}"
         
+        if len(history_prefixes) != len(question_texts):
+            raise ValueError(f"Length mismatch: {len(history_prefixes)} != {len(question_texts)}")
+        
         prompts = []
 
         for hp, qt in zip(history_prefixes, question_texts):
@@ -160,15 +179,17 @@ class LMKTModel(torch.nn.Module):
                 logger.warning(f"Empty question_text passed to p_y_given_question")
             
             if hp and hp.strip():
-                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A}")
+                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A} ")
             else:
-                prompts.append(f"{TOK_Q} {qt} {TOK_A}")
+                prompts.append(f"{TOK_Q} {qt} {TOK_A} ")
+        
         
         enc_out = tok(
             prompts, 
             add_special_tokens=False, 
             truncation=True, 
             max_length=1024,
+            padding=True,
             return_tensors="pt").to(self.device)
 
         # use FP16 on GPUs for speedup
@@ -184,12 +205,17 @@ class LMKTModel(torch.nn.Module):
 
         # [ logits[b_0, T_0], logits[b_1, T_1], ... logits[b_{B-1}, T_{B-1}] ] -> (B, V)
         last_logits = logits[batch_idx, T_batch, :] # (B, V)
-        logit_yn = last_logits[:, [y_id, n_id]] # (B, 2)
+        # logit_yn = last_logits[:, [y_id, n_id]] # (B, 2)
 
-        p_y = torch.softmax(
-           logit_yn,
-            dim=1
-        )[:, 0] # (B,) holding probs
+        # p_y = torch.softmax(
+        #    logit_yn,
+        #     dim=1
+        # )[:, 0] # (B,) holding probs
+
+        # We use a full vocab softmax
+
+        last_tok_sm = torch.softmax(last_logits, dim=1) # (B, V)
+        p_y = last_tok_sm[:, y_id] # (B,)
 
         return p_y
 

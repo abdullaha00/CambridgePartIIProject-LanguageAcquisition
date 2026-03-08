@@ -20,7 +20,7 @@ class SeqDatasetLMKT(Dataset):
     seqs[idx] holds encoded tok_ids for the full hitory of user idx
     """
 
-    def __init__(self, histories: dict, tokenizer, max_length: int = 1024):
+    def __init__(self, histories: dict, tokenizer, max_length: int = 1024, mode: str = "truncate-left"):
         
         self.seqs: List[torch.Tensor] = []
         # TOKENISE HISTORIES
@@ -36,7 +36,6 @@ class SeqDatasetLMKT(Dataset):
                 # OPTIONS: sample window randomly
                 # USE SLIDING WINDOW
                 # mode = "sliding" or "random" 
-                mode = "truncate-left"
                 if mode == "truncate-left": # keep the most recent tokens
                     window_ids = token_ids[-max_length:]
                     self.seqs.append(torch.tensor(window_ids, dtype=torch.long))
@@ -77,13 +76,20 @@ def lmkt_collate(batch, pad_token_id: int, y_id: int, n_id: int) -> Dict[str, to
         seqs_padded[i, :T] = seq
         mask[i, :T] = 1
 
-    #===== -100 signifies ignore for LM loss =====
-    # We ignore everything but <Y/N> labels
+    # OPT1: 
+    # == -100 signifies ignore for LM loss =====
+    # # We ignore everything but <Y/N> labels
 
-    labels = torch.full_like(seqs_padded, -100)
+    # labels = torch.full_like(seqs_padded, -100)
     
-    yn_mask = (seqs_padded == y_id) | (seqs_padded == n_id)
-    labels[yn_mask] = seqs_padded[yn_mask]
+    # yn_mask = (seqs_padded == y_id) | (seqs_padded == n_id)
+    # labels[yn_mask] = seqs_padded[yn_mask]
     
+    # OPT2:
+    # We compute loss on non-padding labels
+
+    labels = seqs_padded.clone()
+    labels[labels == pad_token_id] = -100 # ignore padding in loss
+
     return {"input_ids": seqs_padded, "attention_mask": mask, "labels": labels}
 

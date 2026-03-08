@@ -1,10 +1,26 @@
 from dataclasses import dataclass
+import math
+from random import random
 from typing import Callable, Dict, List, Tuple
+import numpy as np
 import torch
 from tqdm import tqdm
 
-from models.text_kt.common.tokens import TOK_A, TOK_G, TOK_N, TOK_Q, TOK_Y
+from models.text_kt.common.tokens import TOK_A, TOK_BOS, TOK_EOS, TOK_G, TOK_N, TOK_Q, TOK_Y
 from models.text_kt.common.data import history_text
+
+def resize_prompt(prompt:str, length = 200) -> str:
+    split_prompt = prompt.split(" ")
+    if len(split_prompt) <= length:
+        return prompt
+    
+    new_prompt = split_prompt[-(length-1):]
+    if TOK_Q in new_prompt:
+        q_idx = new_prompt.index(TOK_Q)
+        new_prompt = new_prompt[q_idx:]
+    
+    new_line = " ".join(new_prompt)
+    return new_line
 
 @dataclass
 class QGExample:
@@ -16,7 +32,7 @@ class QGExample:
 class QGDataset:
     """
     QG training examples are of the form:
-    prefix + <G> + <Q> question_text <A>
+    prefix + difficulty_val + <G> + <Q> question_text <A>
     where the difficulty assigned to question_text is computed by a frozen LMKTmodel,
     and question_text is held out from the student's history used to train the LMKTmodel.
     """
@@ -25,8 +41,8 @@ class QGDataset:
         histories: Dict[str, List[Tuple[str, int]]],
         held_out_qs: List[str],
         tokenizer,
-        difficulty_fn: Callable[[str, str], float],
-        max_enc_length: int = 1024,
+        difficulty_fn,
+        max_enc_length: int = 1022,
     ):
         
         # Ensure <G> is present
@@ -45,35 +61,59 @@ class QGDataset:
             
             t = len(hist)
             
-            full_text = history_text(hist)
-
-            enc_ids_full = tokenizer.encode(
-                full_text,
-                add_special_tokens=False,
-                truncation=False,
-                return_tensors="pt",
-            ) #(1 , T_full)
-
-            #TRUNCUATION: we keep the last max_enc_length tokens
-            if len(enc_ids_full[0]) > max_enc_length:
-                enc_ids_full = enc_ids_full[:, -max_enc_length:]
+            pref_text = history_text(hist[:-1])
             
-            #prompt_ids = enc_ids_full + 
+            assert len(held_out_qs) > 0, "No held-out questions available for QG example generation."
+            n_sample = min(len(held_out_qs), 5)
+            sampled_qs = np.random.choice(held_out_qs, size=n_sample, replace=False)  # sample up to 5 questions for this user]
+            
+            prefix_texts = []
+            
+            for q_text in sampled_qs:
+                full_prompt = f"{pref_text} {TOK_Q} {q_text} {TOK_A}"
+                full_prompt = resize_prompt(full_prompt)
 
-            # we train on sequences of the form
-            # "<Q>_0 question_text_0 <A>_0 <Y/N>_0.... <Y/N>_{t-1}"
-            labels = enc_ids_full.clone()
-            yn_mask = (enc_ids_full == self.y_id) | (enc_ids_full == self.n_id)
-            labels[~yn_mask] = -100  # only compute loss on <Y/N> tokens to match paper
+                last_q = full_prompt.rfind(TOK_Q)
+                assert last_q != -1, f"Could not find {TOK_Q} in full prompt: {full_prompt}"
 
-            self.examples.append(
-                QGExample(
-                    input_ids=enc_ids_full.squeeze(0), #(T, )
-                    attention_mask=torch.ones_like(enc_ids_full).squeeze(0),
-                    labels=labels.squeeze(0),
-                    difficulty=torch.tensor([0.0], dtype=torch.float),  # Placeholder difficulty
-                )
-            )
+                prefix_prompt = full_prompt[:last_q].strip()
+                assert prefix_prompt.endswith(TOK_Y) or prefix_prompt.endswith(TOK_N), f"Prefix prompt should end with {TOK_Y} or {TOK_N}: {prefix_prompt}"
+
+                prefix_texts.append(prefix_prompt)
+            
+            # Compute difficulty batched
+            with torch.no_grad():
+                diffs = difficulty_fn(prefix_texts, list(sampled_qs))  # (n_sample,)
+
+            for pref_text, q_text, diff in zip(prefix_texts, sampled_qs, diffs):
+                p_y = math.floor(diff.item() * 1000) / 1000  # format to 3 decimal places
+                scaled_diff = p_y * 100 # scale up
+
+                target_text = f"{TOK_G} {q_text} {TOK_EOS}"
+                target_enc = tokenizer.encode(target_text, add_special_tokens=False, truncation=False)
+
+                prefix_enc = tokenizer.encode(pref_text, add_special_tokens=False, truncation=False)
+                max_pref_len = max_enc_length - len(target_enc)
+                if len(prefix_enc) > max_pref_len:
+                    prefix_enc = prefix_enc[-max_pref_len:]
+                
+                enc_ids_full = torch.tensor(prefix_enc + target_enc)
+                assert g_id in enc_ids_full, f"Generated input does not contain {TOK_G}: {enc_ids_full}"
+                
+                # Mask everything up to and including <G> with -100
+                # Only train on tokens AFTER <G> (the generated question)
+                labels = enc_ids_full.clone()
+                g_positions = (enc_ids_full == g_id).nonzero(as_tuple=False)
+                assert g_positions.numel() > 0, f"No <G> token found in enc_ids_full"
+                g_idx = g_positions[0].item()
+                labels[:g_idx + 1] = -100
+
+                self.examples.append(QGExample(
+                    input_ids=enc_ids_full,
+                    attention_mask=torch.ones_like(enc_ids_full),
+                    labels=labels,
+                    difficulty=torch.tensor(scaled_diff, dtype=torch.float32)
+                ))
 
     def __len__(self):
         return len(self.examples)
@@ -95,7 +135,10 @@ def qg_collate(batch: List[QGExample], pad_token_id: int) -> Dict[str, torch.Ten
         T = ex.input_ids.numel()
         input_ids_pad[i, :T] = ex.input_ids
         attention_mask[i, :T] = 1
+
         labels[i, :T] = ex.labels
+        # mask padding 
+        labels[i, T:] = -100
         difficulties[i] = ex.difficulty
 
     return {

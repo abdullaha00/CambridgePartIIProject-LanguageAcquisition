@@ -35,6 +35,8 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 
 #==== ARGUMENTS
+
+
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
                choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt"],
@@ -49,7 +51,10 @@ p.add_argument("-e","--epochs", type=int, default=5)
 p.add_argument("--eval-every", type=int, default=1)
 p.add_argument("--save-every", type=int, default=1, help="Save a checkpoint every N epochs (default: only save final)")
 p.add_argument("--resume", type=str, default=None, help="Path to a .ckpt file to resume training from")
+
 args, next_args = p.parse_known_args()
+
+
 
 MODEL = args.model_name
 TRACK = args.track
@@ -61,8 +66,6 @@ EVAL_EVERY = args.eval_every
 
 if EPOCHS is not None and EVAL_EVERY is None:
     EVAL_EVERY = max(1, EPOCHS // 5)  # default to evaluating 5 times per run
-
-
 
 #===== CONFIG
 torch.manual_seed(42)
@@ -106,7 +109,9 @@ elif MODEL == "lmkt":
         TRACK=TRACK,
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
-        EPOCHS=EPOCHS
+        EPOCHS=EPOCHS,
+        eval_every=EVAL_EVERY,
+        save_every=args.save_every,
     )
 
 elif MODEL == "qg":
@@ -114,7 +119,8 @@ elif MODEL == "qg":
         TRACK=TRACK,
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
-        EPOCHS=EPOCHS
+        EPOCHS=EPOCHS,
+        extra_args=next_args
     )
 
 elif MODEL == "sdkt" or MODEL == "vdkt":
@@ -146,4 +152,5 @@ if not args.no_log:
     for i, rec in enumerate(records):
         log_run(rec, i, runtime_min)
 
-    logger.info(f" {len(records)} runs logged to database.")
+    logger.info(f"{len(records)} runs logged to database." if len(records) > 1 else
+                "1 run logged to database.")

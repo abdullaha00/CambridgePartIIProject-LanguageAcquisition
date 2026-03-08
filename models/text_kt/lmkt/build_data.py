@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LMKTDataBundle:
-    train_dataset: SeqDatasetLMKT
+    train_dataloader: DataLoader
     eval_histories: Dict[str, List[Tuple[str, int]]]
+    pref_ns: Dict[str, int]
     tokenizer: AutoTokenizer
 
 def build_lmkt_dataloaders(
@@ -37,11 +38,32 @@ def build_lmkt_dataloaders(
         track, variant, train_with_dev, subset=subset
     )
 
+    dft_prompts, dfe_prompts = load_train_and_eval_df(
+        track, "prompt", train_with_dev, subset=subset
+    )
+
+    # We restrict to reverse_translate tasks
+    df_train = df_train[df_train["format"] == "reverse_translate"]
+    df_eval = df_eval[df_eval["format"] == "reverse_translate"]
+
     #======= Collapse data
     logger.info("Collapsing data")
 
     df_train = collapse_to_exercise(df_train)
     df_eval = collapse_to_exercise(df_eval)
+
+    assert "ex_key" in df_train.columns, "ex_key not found in collapsed training dataframe"
+    assert "ex_key" in df_eval.columns, "ex_key not found in collapsed eval"
+
+    # Merge with prompts to get prompt text
+    df_train = df_train.merge(dft_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+    df_eval = df_eval.merge(dfe_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+
+    # Sanity check to make sure all prompts were filled
+    missing_train = df_train["prompt"].isna().sum()
+    assert missing_train == 0, f"Missing prompts in training data after merge: {missing_train}"
+    missing_eval = df_eval["prompt"].isna().sum()
+    assert missing_eval == 0, f"Missing prompts in eval data: {missing_eval}"
 
     #==== Build sequences
     logger.info("Building sequences")
@@ -49,6 +71,19 @@ def build_lmkt_dataloaders(
     train_histories = build_user_sequences_text(df_train)
     eval_histories = build_user_sequences_text(df_eval)
 
+    # We want to prepend each user's training history as context
+
+    eval_histories_prepended = {}
+    pref_ns = {}
+    for uid, eval_history in tqdm(eval_histories.items(), 
+                                  desc="Prepending training history to eval histories", leave=False):
+        
+        assert uid in train_histories, f"User {uid} in eval set not found in train set"
+        train_history = train_histories.get(uid, [])
+        eval_histories_prepended[uid] = train_history + eval_history
+        pref_n = len(train_history) # COUNT OF EXERCISES
+        pref_ns[uid] = pref_n
+        
     #==== Build dataset
     train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer)
 
@@ -59,6 +94,6 @@ def build_lmkt_dataloaders(
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=
                           partial(lmkt_collate, pad_token_id=tokenizer.pad_token_id,
                                   y_id=y_id, n_id=n_id))
-    return LMKTDataBundle(train_dataset=train_dl, eval_histories=eval_histories, tokenizer=tokenizer)
+    return LMKTDataBundle(train_dataloader=train_dl, eval_histories=eval_histories_prepended, pref_ns=pref_ns, tokenizer=tokenizer)
 
 

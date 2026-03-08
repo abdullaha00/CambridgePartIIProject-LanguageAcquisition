@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from db.log_db import MetricRecord
 from models.text_kt.lmkt.lmkt import LMKTModel
+from pipelines.common.checkpointing import save_torch
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,10 @@ def parse_lmkt_args(dkt_args=None):
     args = p.parse_args(dkt_args)
     return args
 
-def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
+def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None):
+
+    if save_every is None:
+        save_every = eval_every
 
     logger.info("Running DKT pipeline for LM-KT")
 
@@ -26,7 +30,7 @@ def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
     #==== Build model
 
     model = LMKTModel()
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    opt = torch.optim.AdamW(model.parameters(), lr=5e-5)
 
     #==== BUILD DATALOADER
     lmkt_data = build_lmkt_dataloaders(
@@ -40,25 +44,32 @@ def run_lmkt_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS):
     )
 
     # ==== Train
+    records = []
     
-    for epoch in tqdm(range(EPOCHS), desc="LMKT Training Epochs"):
-        loss = model.train_one_epoch(lmkt_data.train_dataset, opt)
+    for epoch in tqdm(range(1, EPOCHS + 1), desc="LMKT Training Epochs"):
+        loss = model.train_one_epoch(lmkt_data.train_dataloader, opt)
         logger.info(f"Epoch {epoch} loss: {loss}")
-    
-    #==== Evaluate
 
-    metrics = model.evaluate_metrics(lmkt_data.eval_histories)
-    logger.info("Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f", 
-                metrics["auc"], metrics["accuracy"], metrics["f1"])
+        if epoch % eval_every == 0:
+            metrics = model.evaluate_metrics(lmkt_data.eval_histories, lmkt_data.pref_ns)
+            logger.info("Epoch %d | AUC=%.5f | Accuracy=%.5f | F1=%.5f",
+                        epoch, metrics["auc"], metrics["accuracy"], metrics["f1"])
 
-    return [MetricRecord(
-        model="lmkt",
-        track=TRACK,
-        subset=SUBSET,
-        train_with_dev=train_with_dev,
-        variant=None,
-        auc=metrics.get("auc"),
-        acc=metrics.get("accuracy"),
-        f1=metrics.get("f1"),
-        epochs=EPOCHS
-    )]
+            rec = MetricRecord(
+                model="lmkt",
+                track=TRACK,
+                subset=SUBSET,
+                train_with_dev=train_with_dev,
+                variant=None,
+                auc=metrics.get("auc"),
+                acc=metrics.get("accuracy"),
+                f1=metrics.get("f1"),
+                epochs=epoch,
+            )
+            records.append(rec)
+
+            if save_every and epoch % save_every == 0 or epoch == EPOCHS:
+                save_path = save_torch(model, opt, rec)
+                logger.info(f"Checkpoint at epoch {epoch} saved to {save_path}")
+
+    return records
