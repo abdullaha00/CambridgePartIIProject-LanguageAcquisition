@@ -24,7 +24,7 @@ for track in tqdm(["en_es", "es_en", "fr_en"], desc="Language"):
         eng_sents_full = []
         sentence_rowidxs = []
 
-        groups = df.groupby("ex_instance_id", sort=False)
+        groups = df.groupby("ex_inst_idx", sort=False)
 
         for sid, g in tqdm(groups, total=groups.ngroups, desc="Processing Sentences"):
             eng_sents_full.append(" ".join(g["tok"].tolist()))

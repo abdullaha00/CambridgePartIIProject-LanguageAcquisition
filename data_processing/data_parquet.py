@@ -40,7 +40,7 @@ def parquet_exists(track: str = "en_es", split: str = "train", variant: str = "r
 def get_parquet(track: str = "en_es", split: str = "train", variant: str = "reprocessed", subset=None, tag_split=False, columns=None, user_filter=None) -> pd.DataFrame:
     path = BASE / "parquet" / track / variant / f"{track}_{split}_{variant}.parquet"
     
-    if subset is not None:
+    if subset is not None and variant != "prompt":
         # Read only user_id column first to determine which users to keep
         users = pd.read_parquet(path, columns=["user_id"])["user_id"].drop_duplicates().iloc[:subset]
         df = pd.read_parquet(path, columns=columns, filters=[("user_id", "in", users.tolist())])
@@ -71,7 +71,11 @@ def save_parquet(df, track: str, split: str, variant: str):
 
 def load_train_and_eval_df(track: str, variant: str, train_with_dev: bool, subset=None, columns=None):
     df_train_data = get_parquet(track, "train", variant, subset=subset, columns=columns)
-    train_users = df_train_data["user_id"].unique()    
+    
+    if variant != "prompt":
+        train_users = df_train_data["user_id"].unique()    
+    else: 
+        train_users = None
     df_dev_data = get_parquet(track, "dev", variant, user_filter=train_users, columns=columns)
     
     if not train_with_dev:

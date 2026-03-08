@@ -1,12 +1,13 @@
 import pandas as pd
+from typing import Tuple, cast
 from tqdm.auto import tqdm
 from config.consts import DEV, SPLITS, TEST, TRACKS
 from data_processing.data_parquet import save_parquet
 
 #schema definition
-SCHEMA = {
+SCHEMA: dict[str, str] = {
     #ids
-    "ex_instance_id": "int32", 
+    "ex_inst_idx": "int32", 
     "user_id":        "string",
     "tok_id":         "string",
     
@@ -30,15 +31,22 @@ SCHEMA = {
 
 }
 
-def parse(path: str) -> pd.DataFrame:
+def parse(path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     is_train = path.endswith(".train")
 
     with open(path) as f:
         out = []
+        prompt_map = {}
+
+        current_prompt = None
+
         for line in f:
             line = line.strip()
-            if not line or line.startswith("# p"):
+            if not line:
                 continue
+            if line.startswith("# prompt"):
+                current_prompt = line.split(":")[1]
+
             elif line.startswith("# u"):
                 row = list(map(lambda x: x.split(':'), line.split()))
                 row = [x[1] for x in row[1:]]
@@ -48,9 +56,15 @@ def parse(path: str) -> pd.DataFrame:
                 r=line.split()
                 tok_id, tok, pos, meta, split, rt = r[0:6]
 
-                label = r[-1] if is_train else pd.NA
+                # map prompt to tok_id[0:10] as that is the execrise identifier
+                if current_prompt is not None:
+                    ex_id = tok_id[0:10]
+                    prompt_map[ex_id] = current_prompt
+                    assert formt == "reverse_translate" or formt == "reverse_tap", \
+                        f"found format {formt} with prompt {current_prompt}" # only reverse_translate / reverse_tap format has prompts, so this is a sanity check
+                    current_prompt = None
 
-                #ex = Exercise(tok_id, tok, pos, meta, split, rt, label)
+                label = r[-1] if is_train else pd.NA
 
                 out.append({
                     "user_id": user,
@@ -74,20 +88,35 @@ def parse(path: str) -> pd.DataFrame:
 
         df = pd.DataFrame(out)
 
-        # Add ex_instance_id column
+        # Add ex_inst_idx column
         
         ex_id = df["tok_id"].str.slice(0,10).copy()
-
-        df["ex_instance_id"] = (
+        df["ex_inst_idx"] = (
             pd.factorize(ex_id, sort=False)[0] # factorize returns (codes, uniques)
             .astype("int32")
         ) 
+
+        # sanity check that all prompts were mapped (for rev translate and reverse_tap)
+
+        fmts_mask = df["format"].isin(["reverse_translate", "reverse_tap"])
+
+        missing = set(ex_id[fmts_mask].unique()) - set(prompt_map.keys())
+        assert len(missing) == 0, f"missing prompts for exercise ids: {missing}"
+
 
         # re-order to match schema
 
         df = df[list(SCHEMA.keys())]
 
-        return df
+        # get prompt df with ex_key for merging
+        prompt_df = (
+            pd.Series(prompt_map, name="prompt")
+            .reset_index()
+            .rename(columns={"index": "ex_key"})
+        )
+
+
+        return df, prompt_df
 
 def parse_key(path:str) -> pd.DataFrame:
     return pd.read_csv(
@@ -108,8 +137,11 @@ def enforce_schema(df: pd.DataFrame) -> pd.DataFrame:
 
     for col, dtype in SCHEMA.items():
         assert col in df.columns
+        
+        # Type checkong
+        dtype = cast(type, dtype)
 
-        if dtype in ["string", "boolean"]: #non-numeric
+        if dtype in ["string", "boolean"]: # non-numeric
             df[col] = df[col].astype(dtype)
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce").astype(dtype)
@@ -131,7 +163,7 @@ if __name__ == "__main__":
             file_path = f"data_{track}/{track}.slam.20190204.{split}"
 
             #------ parse original
-            df = parse(file_path)
+            df, df_prompt = parse(file_path)
             
             # use .key file for dev data
             if split == DEV or (use_test_key and split == TEST):
@@ -148,3 +180,4 @@ if __name__ == "__main__":
 
             save_parquet(dfM, track, split, "minimal")
             save_parquet(df, track, split, "original")
+            save_parquet(df_prompt, track, split, "prompt")

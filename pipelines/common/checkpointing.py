@@ -6,6 +6,9 @@ import numpy as np
 import torch
 from db.log_db import MetricRecord
 from typing import Any
+import logging 
+
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RunKey:
@@ -94,5 +97,6 @@ def save_lgbm(model, rec: MetricRecord) -> Path:
     with open(save_path_mets, "w") as f:
         f.write(f"tag: {rec.tag}\nauc: {rec.auc}\naccuracy: {rec.acc}\nf1: {rec.f1}\n")
     model.booster_.save_model(save_path)
+    logger.info(f"Saved LightGBM model to {save_path} and metrics to {save_path_mets}")
     return save_path
 
