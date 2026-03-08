@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 from typing import Dict
+
+import numpy as np
 from config.consts import ITEM_EX, ITEM_TOK
 from models.dkt.data.item_builders import SeqBundle, build_ex_sequences, build_tok_sequences
 from models.text_kt.common.data import collapse_to_exercise
@@ -22,11 +24,28 @@ class DKTDataBundle:
     item_map: Dict[str, int]
 
 def truncuate_seqs(seqs: dict, max_len: int) -> dict:
-    """Truncate sequences to at most max_len, keeping the most recent interactions."""
     return {
         uid: (q_ids[-max_len:], correct[-max_len:])
         for uid, (q_ids, correct) in seqs.items()
     }
+
+def prepend_train_history(train_seqs: dict, eval_seqs: dict) -> dict:
+    # eval_seqs is dict of uid -> (q_ids, correct_list)
+    # train_seqs is dict of uid -> (q_ids, correct_list)
+
+    full_eval_seqs = {}
+    pref_lens = {}
+
+    for uid, (eval_q, eval_a) in eval_seqs.items():
+        train_q, train_a = train_seqs[uid]
+        pref_lens[uid] = len(train_q)
+    
+        full_q = np.concatenate([train_q, eval_q])
+        full_a = np.concatenate([train_a, eval_a])
+
+        full_eval_seqs[uid] = (full_q, full_a)
+
+    return full_eval_seqs, pref_lens
 
 def build_dkt_dataloaders(
     track: str,
@@ -47,12 +66,12 @@ def build_dkt_dataloaders(
     if item_level == ITEM_TOK:
         DF_COLS = ["user_id", "lemma", "label"]
     elif item_level == ITEM_EX:
-        DF_COLS = ["user_id", "ex_instance_id", "tok", "label"]
+        DF_COLS = ["user_id", "ex_inst_idx", "tok", "label"]
     else:
         raise ValueError(f"Invalid item_level {item_level}")
     
     df_train, df_eval = load_train_and_eval_df(
-        track, variant, train_with_dev, subset=subset
+        track, variant, train_with_dev, subset=subset, columns=DF_COLS
     )
 
     #======= Get correct seq bundle
@@ -60,18 +79,20 @@ def build_dkt_dataloaders(
     if item_level == ITEM_TOK:
         bundle: SeqBundle = build_tok_sequences(df_train, df_eval, item_col="lemma", drop_unk=True)
     elif item_level == ITEM_EX:
-        bundle: SeqBundle = build_ex_sequences(df_train, df_eval, item_col="ref_ans", drop_unk=True)
+        bundle: SeqBundle = build_ex_sequences(df_train, df_eval, item_col="prompt", drop_unk=True)
     
     train_seqs = bundle.seqs["train"]
     eval_seqs = bundle.seqs["eval"]
+
+    eval_full_seqs, pref_lens = prepend_train_history(train_seqs, eval_seqs)
 
     #==== Truncate long sequences to cap memory during training
     if max_seq_len is not None:
         train_seqs = truncuate_seqs(train_seqs, max_seq_len)
 
     #==== Build datasets
-    train_ds = DKTSeqDataset(train_seqs)
-    test_ds = DKTSeqDataset(eval_seqs)
+    train_ds = DKTSeqDataset(train_seqs, prefix_lens={})
+    test_ds = DKTSeqDataset(eval_full_seqs, prefix_lens=pref_lens)
 
     #==== Build dataloaders
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=collate_dkt)

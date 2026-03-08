@@ -61,7 +61,7 @@ def build_tok_sequences(
 def build_ex_sequences(
     df_train: pd.DataFrame,
     df_eval: pd.DataFrame,
-    item_col: str = "ref_ans",
+    item_col: str = "prompt",
     drop_unk: bool = True
 ) -> SeqBundle:
     

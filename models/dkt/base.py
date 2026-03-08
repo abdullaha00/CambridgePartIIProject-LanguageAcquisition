@@ -64,7 +64,7 @@ class DKTBase(nn.Module):
         self.train()
 
         total, n = 0.0, 0
-        for uids, Q, A, mask in dl:
+        for uids, Q, A, mask, pref_lens in dl:
 
             Q = Q.to(self.device)
             A = A.to(self.device)
@@ -87,17 +87,21 @@ class DKTBase(nn.Module):
         all_targs = []
 
         with torch.no_grad():
-            for uids, Q, A, mask in dl:
+            for uids, Q, A, mask, pref_lens in dl:
                 Q = Q.to(self.device)
                 A = A.to(self.device)
                 mask = mask.to(self.device)
 
                 Q_in, A_in = Q[:, :-1], A[:, :-1]
 
-                h = self(Q_in, A_in)
+                h = self(Q_in, A_in) # (B, T-1, H) for states (s_0, s_1, ..., s_{T-2}) after observing q_i
                 probs = self.predict_next(h, Q[:, 1:])
 
                 targ_mask = mask[:, 1:]
+
+                for i, pref_len in enumerate(pref_lens):
+                    assert pref_len > 0, f"Prefix length should be > 0, got {pref_len}"
+                    targ_mask[i, :pref_len-1] = 0 # Don't evaluate on train 
 
                 all_preds.append(probs[targ_mask])
                 all_targs.append(A[:, 1:][targ_mask])

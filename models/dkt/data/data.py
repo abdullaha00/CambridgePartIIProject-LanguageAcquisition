@@ -32,12 +32,12 @@ def build_user_sequences_qid(df: pd.DataFrame, qid_map: dict) -> dict:
     return seqs
 
 def generate_qid_map(df: pd.DataFrame) -> Dict[str, int]:
-    unique_qs = df["ref_ans"].unique()
+    unique_qs = df["prompt"].unique()
     qid_map = {q: i for i, q in enumerate(unique_qs)}
     return qid_map
 
 def apply_qid_map(df: pd.DataFrame, qid_map: dict, drop_unk=True) -> pd.DataFrame:
-    df["question_id"] = df["ref_ans"].map(qid_map)
+    df["question_id"] = df["prompt"].map(qid_map)
 
     # We can either drop if drop_unk is true
     if drop_unk:
@@ -78,21 +78,25 @@ def embed_sentence_matrix(sentence_list: List[str], model_name: str = "distilber
     return np.vstack(all_embs) # (num_sentences, embedding_dim)
 
 class DKTSeqDataset(Dataset):
-    def __init__(self, seqs: dict):
+    def __init__(self, seqs: dict, prefix_lens: dict | None = None):
         # Convert dict to list of (uid, (q_ids, correct_list)) 
         self.seqs = list(seqs.items())
+        self.prefix_lens = prefix_lens if prefix_lens is not None else {}
 
     def __len__(self):
         return len(self.seqs)
 
     def __getitem__(self, idx):
         uid, (q_ids, correct_list) = self.seqs[idx]
-        return uid, torch.from_numpy(q_ids.copy()), torch.from_numpy(correct_list.copy())
+        
+        pref_len = self.prefix_lens.get(uid, 0)
+        
+        return uid, torch.from_numpy(q_ids.copy()), torch.from_numpy(correct_list.copy()), pref_len
 
 def collate_dkt(batch):
-    # batch: list of (uid, q, a)
+    # batch: list of (uid, q, a, prefix_len)
     
-    uids, q_ids, correct_list = zip(*batch)
+    uids, q_ids, correct_list, prefix_lens = zip(*batch)
 
     T_max = max(len(q_seq) for q_seq in q_ids)
     B = len(q_ids)
@@ -100,6 +104,7 @@ def collate_dkt(batch):
     q_ids_padded = torch.zeros((B, T_max), dtype=torch.long)
     correct_list_padded = torch.zeros((B, T_max), dtype=torch.long)
     mask = torch.zeros((B, T_max), dtype=torch.bool)
+    pref_lens_tens = torch.tensor(prefix_lens, dtype=torch.long)
 
     for i, (q, a) in enumerate(zip(q_ids, correct_list)):
         T = len(q)
@@ -107,4 +112,4 @@ def collate_dkt(batch):
         correct_list_padded[i, :T] = a
         mask[i, :T] = 1
     
-    return uids, q_ids_padded, correct_list_padded, mask
+    return uids, q_ids_padded, correct_list_padded, mask, pref_lens_tens
