@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from models.text_kt.common.tokens import TOK_A, TOK_BOS, TOK_EOS, TOK_G, TOK_N, TOK_Q, TOK_Y
-from models.text_kt.common.data import history_text
+from models.modular_qg.common.tokens import TOK_A, TOK_BOS, TOK_EOS, TOK_G, TOK_N, TOK_Q, TOK_Y
+from models.modular_qg.common.data import history_text
 
 def resize_prompt(prompt:str, length = 200) -> str:
     split_prompt = prompt.split(" ")

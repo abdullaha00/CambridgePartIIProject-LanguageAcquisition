@@ -6,7 +6,7 @@ from typing import Dict
 import numpy as np
 from config.consts import ITEM_EX, ITEM_TOK
 from models.dkt.data.item_builders import SeqBundle, build_ex_sequences, build_tok_sequences
-from models.text_kt.common.data import collapse_to_exercise
+from models.modular_qg.common.data import collapse_to_exercise
 from models.dkt.data.data import apply_qid_map, generate_qid_map
 from models.dkt.data.data import DKTSeqDataset, collate_dkt
 from models.dkt.data.data import build_user_sequences_qid

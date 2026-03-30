@@ -26,7 +26,6 @@ def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
             # exercise is correct if ALL tokens are correct (label 0)
             correct=("label", lambda x: int(np.all(x == 0)))
         ).reset_index()
-
     )
 
 def merge_with_prompts(df_ex: pd.DataFrame, df_prompt: pd.DataFrame) -> pd.DataFrame:

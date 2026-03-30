@@ -8,10 +8,10 @@ from tqdm import tqdm
 import logging
 
 from data_processing.data_parquet import load_train_and_eval_df
-from models.text_kt.common.data import build_user_sequences_text
-from models.text_kt.common.tokens import TOK_N, TOK_Y
-from models.text_kt.common.data import collapse_to_exercise
-from models.text_kt.lmkt.data import SeqDatasetLMKT, lmkt_collate
+from models.modular_qg.common.data import build_user_sequences_text
+from models.modular_qg.common.tokens import TOK_N, TOK_Y
+from models.modular_qg.common.data import collapse_to_exercise
+from models.modular_qg.lmkt.data import SeqDatasetLMKT, lmkt_collate
 
 logger = logging.getLogger(__name__)
 

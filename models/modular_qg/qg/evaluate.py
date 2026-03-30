@@ -5,11 +5,26 @@ import random
 from typing import Dict, List, Tuple
 import numpy as np
 import torch
+import sacrebleu
 from tqdm import tqdm
 
-from models.text_kt.common.data import history_text
+from models.modular_qg.common.data import history_text
 
 logger = logging.getLogger(__name__)
+
+def eval_bleu(preds: List[str], refs: List[str]) -> Dict[str, float]:
+    """
+    Evaluate BLEU score between predicted questions and reference questions.
+    Uses sacrebleu for standard BLEU computation.
+    """
+
+    assert len(preds) == len(refs), "Number of predictions and references must match for BLEU evaluation."
+
+    bleu = sacrebleu.corpus_bleu(preds, [refs])
+    return {
+        "bleu": bleu.score
+    }
+
 
 def evaluate_difficulty_targets(
     target_difficulties: List[float],

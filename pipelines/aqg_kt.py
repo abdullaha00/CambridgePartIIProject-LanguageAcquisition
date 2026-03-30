@@ -1,0 +1,155 @@
+import argparse
+import logging
+
+import pandas as pd
+import torch
+from transformers import get_linear_schedule_with_warmup
+
+from data_processing.data_parquet import get_parquet
+from db.log_db import MetricRecord
+from models.adaptive_qg.adaptive_data import MAX_SEQ_LEN, build_word_vocab, load_user_data
+from models.adaptive_qg.aqg_kt import (
+    DKT,
+    HIDDEN_SIZE,
+    NUM_LAYERS,
+    WARMUP_RATE,
+    evaluate_adaptive_qg_dkt,
+    train_dkt_epoch,
+)
+from pipelines.common.checkpointing import save_torch
+from pipelines.common.common import mk_record
+
+logger = logging.getLogger(__name__)
+
+def parse_aqg_kt_args(aqg_args=None):
+    p = argparse.ArgumentParser(description="Adaptive QG KT Pipeline Args")
+    p.add_argument("--variant", type=str, default="reprocessed") # original/reprocessed
+    p.add_argument("--hidden-size", type=int, default=HIDDEN_SIZE)
+    p.add_argument("--num-layers", type=int, default=NUM_LAYERS)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--warmup-rate", type=float, default=WARMUP_RATE)
+    p.add_argument("--positive-weight", type=float, default=3.0)
+    p.add_argument("--max-seq-len", type=int, default=MAX_SEQ_LEN)
+    p.add_argument("--epochs", type=int, default=5)
+    return p.parse_args(aqg_args)
+
+def run_aqg_dkt_pipeline(
+        model_name: str,
+        track: str,
+        subset: int | None,
+        train_with_dev: bool,
+        EPOCHS: int,
+        eval_every: int,
+        next_args: list[str] | None = None,
+        tag: str | None = None,
+        save_every: int | None = None,
+    ) -> list[MetricRecord]:
+        
+    aqg_args = parse_aqg_kt_args(next_args)
+    if save_every is None:
+        save_every = eval_every
+    
+    # === GPU if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    logger.info("Starting Adaptive QG KT Pipeline with args: %s", vars(aqg_args))
+    
+    # ==== DATA LOADING AND PREPARATION
+    train_df = get_parquet(track, "train", aqg_args.variant, subset=subset)
+    train_users = train_df["user_id"].unique()
+
+    dev_df = get_parquet(track, "dev", aqg_args.variant, user_filter=train_users)
+    test_df = get_parquet(track, "test", aqg_args.variant, user_filter=train_users)
+
+    train_df["split"] = "train"
+    dev_df["split"] = "dev"
+    test_df["split"] = "test"
+
+    combined_df = pd.concat([train_df, dev_df, test_df], ignore_index=True)
+
+    train_splits = [1, 2] if train_with_dev else [1]
+    eval_splits = [3] if train_with_dev else [2]
+
+    user_data_list, seen_texts = load_user_data(combined_df)
+    word_vocab = build_word_vocab(train_df)
+
+    assert user_data_list, "No user data found after loading. Please check the input data and preprocessing steps." 
+
+    # === MODEL 
+    dkt = DKT(len(word_vocab), hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS).to(device)
+    
+    opt = torch.optim.AdamW(dkt.parameters(), lr=1e-3) # Weighted Adam with decoupled weight decay NOTE
+
+    total_steps = (EPOCHS * len(user_data_list))
+    warmup_steps = int(WARMUP_RATE * total_steps) # 10% of total steps for warmup
+
+    scheduler = get_linear_schedule_with_warmup(opt, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+
+    records: list[MetricRecord] = []
+
+    # === TRAINING LOOP
+    for epoch in range(1, EPOCHS+1):
+        
+        avg_loss = train_dkt_epoch(
+            dkt=dkt,
+            user_data_list=user_data_list,
+            opt=opt,
+            scheduler=scheduler,
+            device=device,
+            target_split=train_splits,
+            max_length=aqg_args.max_seq_len,
+            positive_weight=aqg_args.positive_weight,
+        )
+
+        logger.info("Epoch %d | train_loss=%.4f", epoch, avg_loss/len(user_data_list))
+
+        # === EVALUATION
+
+        metrics = evaluate_adaptive_qg_dkt(
+            dkt=dkt,
+            user_data_list=user_data_list,
+            target_split=eval_splits,
+            device=device,
+            max_length=aqg_args.max_seq_len,
+            positive_weight=aqg_args.positive_weight,
+        )
+
+        # logger.info(
+        #     "Epoch %d | eval_loss=%.4f | AUC=%.5f | Accuracy=%.5f | F1=%.5f | targets=%d",
+        #     epoch,
+        #     metrics["loss"],
+        #     metrics["auc"],
+        #     metrics["accuracy"],
+        #     metrics["f1"],
+        #     metrics["n_targets"],
+        # )
+
+        record = mk_record(
+                model_name=model_name,
+                track=track,
+                subset=subset,
+                train_with_dev=train_with_dev, 
+                metrics=metrics,
+                variant=aqg_args.variant,
+                epochs=epoch,
+                tag=tag,
+            )
+        
+        records.append(record)
+
+    # == SAVING
+    if subset is None and (save_every and epoch % save_every == 0 or epoch == EPOCHS):
+        save_path = save_torch(
+            model=dkt,
+            opt=opt,
+            rec=record,
+            extra={
+                "word_vocab": word_vocab,
+                "seen_texts": sorted(seen_texts),
+                "config": vars(aqg_args),
+                "eval_metrics": metrics,
+            },
+        )
+        logger.info("Checkpoint at epoch %d saved to %s", epoch, save_path)
+
+    return records

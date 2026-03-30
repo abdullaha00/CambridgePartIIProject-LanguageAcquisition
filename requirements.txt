@@ -17,4 +17,6 @@ pyarrow
 fastparquet
 
 tabulate
-shutil
+psutil
+sacrebleu
+fasttext

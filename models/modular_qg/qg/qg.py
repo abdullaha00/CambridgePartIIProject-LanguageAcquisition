@@ -3,8 +3,8 @@ from typing import List
 import torch
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from models.text_kt.qg.data import resize_prompt
-from models.text_kt.common.tokens import TOK_BOS, TOK_EOS, TOK_G, TOK_N, TOK_PAD, TOK_Q, TOK_A, TOK_Y
+from models.modular_qg.qg.data import resize_prompt
+from models.modular_qg.common.tokens import TOK_BOS, TOK_EOS, TOK_G, TOK_N, TOK_PAD, TOK_Q, TOK_A, TOK_Y
 
 BODY_TOKS = [TOK_Q, TOK_A, TOK_Y, TOK_N, TOK_G]
 

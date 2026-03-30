@@ -1,12 +1,12 @@
 from numpy import record
-from models.text_kt.lmkt.build_data import build_lmkt_dataloaders
+from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
 import logging
 import argparse
 import torch
 from tqdm import tqdm
 
 from db.log_db import MetricRecord
-from models.text_kt.lmkt.lmkt import LMKTModel
+from models.modular_qg.lmkt.lmkt import LMKTModel
 from pipelines.common.checkpointing import save_torch
 
 logger = logging.getLogger(__name__)

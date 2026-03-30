@@ -3,19 +3,19 @@ from functools import partial
 
 from data_processing.data_parquet import load_train_and_eval_df
 from db.log_db import MetricRecord
-from models.text_kt.common.data import collapse_to_exercise, build_user_sequences_text, history_text
-from models.text_kt.lmkt.build_data import build_lmkt_dataloaders
+from models.modular_qg.common.data import collapse_to_exercise, build_user_sequences_text, history_text
+from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
 import logging
 import argparse
 import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from models.text_kt.qg.data import QGDataset
+from models.modular_qg.qg.data import QGDataset
 
-from models.text_kt.qg.data import qg_collate
-from models.text_kt.lmkt.lmkt import LMKTModel
-from models.text_kt.qg.evaluate import run_qg_evaluation
-from models.text_kt.qg.qg import LMKTQG
+from models.modular_qg.qg.data import qg_collate
+from models.modular_qg.lmkt.lmkt import LMKTModel
+from models.modular_qg.qg.evaluate import run_qg_evaluation
+from models.modular_qg.qg.qg import LMKTQG
 from pipelines.common.checkpointing import load_torch_ckpt
 
 logger = logging.getLogger(__name__)

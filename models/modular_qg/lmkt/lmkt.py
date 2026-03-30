@@ -6,8 +6,8 @@ import torch
 from tqdm import tqdm
 import logging
 
-from models.text_kt.common.data import history_text
-from models.text_kt.common.tokens import TOK_BOS, TOK_EOS, TOK_N, TOK_Y, TOK_Q, TOK_A, TOK_PAD
+from models.modular_qg.common.data import history_text
+from models.modular_qg.common.tokens import TOK_BOS, TOK_EOS, TOK_N, TOK_Y, TOK_Q, TOK_A, TOK_PAD
 
 logger = logging.getLogger(__name__)
 

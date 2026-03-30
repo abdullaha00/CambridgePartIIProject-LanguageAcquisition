@@ -8,6 +8,7 @@ from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
 from time import perf_counter
 from pipelines.lmkt import parse_lmkt_args, run_lmkt_pipeline
 from pipelines.lr import run_lr_pipeline
+from pipelines.aqg_kt import run_aqg_dkt_pipeline
 import logging
 from transformers import logging as hf_logging
 from rich.logging import RichHandler
@@ -36,10 +37,9 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 #==== ARGUMENTS
 
-
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt"],
+               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt"],
                help="Which model to run")
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
 p.add_argument("-d", "--train-with-dev", action="store_true", default=False)
@@ -53,8 +53,6 @@ p.add_argument("--save-every", type=int, default=1, help="Save a checkpoint ever
 p.add_argument("--resume", type=str, default=None, help="Path to a .ckpt file to resume training from")
 
 args, next_args = p.parse_known_args()
-
-
 
 MODEL = args.model_name
 TRACK = args.track
@@ -135,6 +133,20 @@ elif MODEL == "sdkt" or MODEL == "vdkt":
         tag=args.tag,
         save_every=args.save_every,
         resume_from=args.resume,
+    )
+
+elif MODEL == "aqg_dkt":
+    
+    records = run_aqg_dkt_pipeline(
+        model_name=MODEL,
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=TRAIN_WITH_DEV,
+        EPOCHS=EPOCHS,
+        eval_every=EVAL_EVERY,
+        next_args=next_args,
+        tag=args.tag,
+        save_every=args.save_every,
     )
 
 else:

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
-from models.text_kt.common.data import collapse_to_exercise
+from models.modular_qg.common.data import collapse_to_exercise
 
 @dataclass(frozen=True)
 class SeqBundle:

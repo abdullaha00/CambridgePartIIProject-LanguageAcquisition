@@ -10,8 +10,8 @@ import logging
 from transformers import AutoTokenizer
 
 from data_processing.data_parquet import load_train_and_eval_df
-from models.text_kt.common.data import collapse_to_exercise, build_user_sequences_text, history_text
-from models.text_kt.common.tokens import TOK_N, TOK_Y
+from models.modular_qg.common.data import collapse_to_exercise, build_user_sequences_text, history_text
+from models.modular_qg.common.tokens import TOK_N, TOK_Y
 
 logger = logging.getLogger(__name__)
 
