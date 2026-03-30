@@ -9,6 +9,8 @@ import torch.nn as nn
 HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 
+WARMUP_RATE = 0.1
+
 #====
 class DKT(nn.Module):
     def __init__(self, num_words: int, hidden_size: int, num_layers: int):
