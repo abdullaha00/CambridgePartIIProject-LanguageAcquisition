@@ -67,7 +67,7 @@ def collapse_with_labels(df: pd.DataFrame, split_label: int) -> List[ExerciseRec
 
     out = []
 
-    for row in grouped.itertuples(index=False):
+    for row in tqdm(grouped.itertuples(index=False), desc="Collapsing to exercise level", leave=False):
         ex_key, user_id, text, tokens, labels, pos_tags = row
 
         out.append(ExerciseRecordDF(
@@ -115,11 +115,11 @@ def sample_keywords(toks: List[str], pos_tags: List[str], rate: float) -> List[s
         {"PUNCT", "SYM", "X", "ADP", "AUX", "INTJ", "CCONJ", "DET", "PROPN", "NUM", "PART", "SCONJ", "PRON"},
     )
     assert len(toks) == len(pos_tags), "Tokens and POS tags must have the same length."
-    
+        
     # round half up
     target_count = math.floor(len(toks) * rate + 0.5)
     if target_count <= 0:
-        logger.warning(f"Target keyword count is {target_count} for toks: {toks}. Returning empty keyword list.")
+        #logger.warning(f"Target keyword count is {target_count}, given rate {rate} and {len(toks)} tokens. Returning empty keyword list.")
         return []
 
     tok_lists = [[] for _ in KEYWORD_SAMPLE_PRIORITY]
@@ -148,7 +148,7 @@ def sample_keywords(toks: List[str], pos_tags: List[str], rate: float) -> List[s
         if 1 <= num_to_sample <= len(tok_list):
             sampled.update(random.sample(tok_list, k=num_to_sample))
 
-        if len(tok_list) > target_count:
+        if len(tok_list) >= target_count:
             break
 
     sampled_toks = list(sampled)
@@ -157,7 +157,7 @@ def sample_keywords(toks: List[str], pos_tags: List[str], rate: float) -> List[s
 
     return sampled_toks
 
-def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
+def load_user_data(df: pd.DataFramem) -> pd.DataFrame:
     """
     Loads user data from token-level dataframe, collapsing to exercise-level and including labels.
     """
@@ -167,10 +167,13 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
     dev_df = df[df["split"] == "dev"]
     test_df = df[df["split"] == "test"]
 
+    
+    logger.info(f"Train samples: {len(train_df)}, Dev samples: {len(dev_df)}, Test samples: {len(test_df)}")
     train_recs = collapse_with_labels(train_df, 1)
     dev_recs = collapse_with_labels(dev_df, 2)
     test_recs = collapse_with_labels(test_df, 3)
 
+    logger.info(f"Collapsed to exercises - Train: {len(train_recs)}, Dev: {len(dev_recs)}, Test: {len(test_recs)}")
     # RANDOM 80% sample for "seen"
     all_unique_texts = sorted(set(rec.text for recs in (train_recs, dev_recs, test_recs) for rec in recs))
     seen_texts = set(pd.Series(all_unique_texts).sample(frac=0.8, random_state=42))
@@ -183,38 +186,51 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
         user_records[rec.user_id].append(rec)
 
     # Compute non-adaptive difficulty from training data
-    word_difficulty = compute_difficulty(train_df)
+    word_difficulty = compute_difficulty(train_df + dev_df) 
     
     # Build word vocab from training data
-    word_vocab = build_word_vocab(train_df)
+    word_vocab = build_word_vocab(train_df + dev_df)
 
     unk_id, bos_id, eos_id = word_vocab["<unk>"], word_vocab["<bos>"], word_vocab["<eos>"]
     users: List[UserData] = []
 
+    no_diff_count = 0
+    total_raw_tok_count = 0
+
+    seq_len_budget = MAX_SEQ_LEN - 2
+
     for user_id, recs in tqdm(sorted(user_records.items()), desc="Processing users"):
-        raw_tok_count = sum(len(rec.tokens) for rec in recs)
         
+        assert recs, "User {user_id} has no records after collapsing" 
+
+        raw_tok_count = sum(len(rec.tokens) for rec in recs)
+
         if raw_tok_count > 2500: # NOTE: skip users with too much data (reference)
             continue
+            
+        if not any(rec.split == 3 for rec in recs): # skip users with no test data
+            logger.warning(f"User {user_id} has no test data; skipping.")
+            continue
         
+        total_raw_tok_count += raw_tok_count
         # Truncuate-left
         num_items = 0
         tok_count = 0
 
         for rec in recs[::-1]:  # reverse to truncate from the left
-            if tok_count <= MAX_SEQ_LEN:
+            if tok_count + len(rec.tokens) <= seq_len_budget:
                 num_items += 1
                 tok_count += len(rec.tokens)
             else:
                 break
-
+        
         trunc_recs = recs[-num_items:]
 
 
-        user_word_ids: List[int] = []
-        user_labels: List[int] = []
-        user_split_ids: List[int] = []
-        user_interaction_ids: List[int] = []
+        user_word_ids: List[int] = [bos_id]
+        user_labels: List[int] = [-100]
+        user_split_ids: List[int] = [0]
+        user_interaction_ids: List[int] = [-1]
         user_exercises: List[ExerciseRecord] = []
 
         for interaction_id, rec in enumerate(trunc_recs):
@@ -224,8 +240,10 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
             # non-adaptive difficulty
             for tok in rec.tokens:
                 if tok.lower() not in word_difficulty:
-                    logger.warning(f"Token '{tok}' not found in word difficulty dict. Assigning difficulty 0.0.")
+                    no_diff_count += 1
                 non_adaptive_difficulty += word_difficulty.get(tok.lower(), 0.0)
+
+            state_position = len(user_word_ids)-1 # last token idx before exercise 
 
             user_exercises.append(ExerciseRecord(
                 text=rec.text,
@@ -233,7 +251,7 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
                 pos_tags=rec.pos_tags,
                 labels=rec.labels,
                 split=rec.split,
-                state_position=interaction_id,
+                state_position=state_position,
                 non_adaptive_difficulty=non_adaptive_difficulty,
                 adaptive_difficulty=sum(rec.labels), 
                 keywords=sample_keywords(rec.tokens, rec.pos_tags, rate=0.3)
@@ -250,6 +268,9 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
         user_split_ids.append(0)
         user_interaction_ids.append(-1)
 
+        assert len(user_word_ids) <= MAX_SEQ_LEN, \
+        f"User {user_id} exceeds MAX_SEQ_LEN: {len(user_word_ids)} > {MAX_SEQ_LEN}"
+
         users.append(UserData(
             user_id=user_id,
             word_ids=user_word_ids,
@@ -259,4 +280,10 @@ def load_user_data(df: pd.DataFrame) -> pd.DataFrame:
             exercises=user_exercises
         ))
 
-        return users, seen_texts
+
+    logger.warning(
+        f"Tokens not found in word difficulty dict: {no_diff_count} / {total_raw_tok_count} "
+        f"({no_diff_count/total_raw_tok_count:.2%})"
+    )
+
+    return users, seen_texts

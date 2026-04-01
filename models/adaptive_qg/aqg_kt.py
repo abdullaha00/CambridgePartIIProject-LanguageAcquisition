@@ -1,15 +1,26 @@
 from dataclasses import dataclass
+import logging
+import numpy as np
+from sklearn.metrics import f1_score, roc_auc_score
 import torch
 from typing import Dict
 from .adaptive_data import MAX_SEQ_LEN, UserData
 import torch.nn as nn
 
+logger = logging.getLogger(__name__)
+
 #==== CONFIG
 
-HIDDEN_SIZE = 128
-NUM_LAYERS = 2
+HIDDEN_SIZE = 100
+NUM_LAYERS = 3
 
-WARMUP_RATE = 0.1
+WARMUP_RATE = 0.03
+
+LOSS_CURR_WEIGHT = 0.0
+LOSS_LAST_WEIGHT = 1.0
+LOSS_LAST_QUESTION_WEIGHT = 0.5
+L1_WEIGHT = 0.1
+L2_WEIGHT = 0.1
 
 #====
 class DKT(nn.Module):
@@ -53,10 +64,12 @@ class DKT(nn.Module):
 def pad_list(values: list[int], max_length: int, pad_value: int = 0) -> list[int]:
     """
     Pads a list of integers to a specified maximum length with a given padding value.
-    If the list is longer than max_length, it will be truncated from the left.
+    UserData should already be truncated.
     """
     if len(values) > max_length:
-        return values[-max_length:] # keep the most recent interactions
+        raise ValueError(
+            f"Sequence length {len(values)} exceeds max_length={max_length}. "
+        )
     
     return values + [pad_value] * (max_length - len(values)) # pad with the specified value
 
@@ -82,7 +95,7 @@ def kt_predictions(
         word_inds = word_ids.unsqueeze(-1) # (B, T, 1)
         logits_cur_step = logits.gather(-1, word_inds).squeeze(-1) # (B, T)
 
-        shift_logits = torch.roll(logits, shifts=-1, dims=1) # (B, T)
+        shift_logits = torch.roll(logits, shifts=1, dims=1) # (B, T)
         logits_last_step = shift_logits.gather(-1, word_inds).squeeze(-1) # (B, T)
 
         valid_interaction_ids = interaction_ids.clone() # (1, T)
@@ -98,7 +111,7 @@ def kt_predictions(
         return {
             "logits_cur_step": logits_cur_step,  # (B, T)
             "logits_last_step": logits_last_step,  # (B, T)
-            "logits_last_question": logits_last_question
+            "logits_last_question": logits_last_question # (B, T)
         }
 
 
@@ -109,7 +122,7 @@ def kt_objective(
         split_ids: torch.Tensor, # (B, T)
         interaction_ids: torch.Tensor, # (B, T)
         state_positions: torch.Tensor, # (B, T)
-        target_split: int | list[int] = 1,
+        target_split: list[int] = [1],
         positive_weight: float = 3.0
     ) -> torch.Tensor:
 
@@ -149,13 +162,20 @@ def kt_objective(
 
         reg_positions = (split_ids != 0).float().unsqueeze(-1) # (B, T, 1) only apply regularization to non-padded positions
         probs = torch.sigmoid(logits) # (B, T, V)
-        shift_probs = torch.roll(probs, shifts=-1, dims=1) # (B, T, V)
+        shift_probs = torch.roll(probs, shifts=1, dims=1) # (B, T, V)
         
-        reg_denom = reg_positions.sum().clamp(min=1.0) # number of valid positions for regularization
+        # Average over (timesteps, vocab size)
+        reg_denom = reg_positions.sum().clamp(min=1.0) * logits.size(-1)
         l1_reg = torch.sum(torch.abs(probs - shift_probs) * reg_positions) / reg_denom
-        l2_reg = torch.sum(torch.square((probs - shift_probs) ** 2) * reg_positions) / reg_denom
+        l2_reg = torch.sum(torch.square((probs - shift_probs)) * reg_positions) / reg_denom
 
-        total_loss = loss_current + loss_last + loss_last_question + 0.01 * l1_reg + 0.01 * l2_reg
+        total_loss = (
+            loss_current * LOSS_CURR_WEIGHT 
+            + loss_last * LOSS_LAST_WEIGHT
+            + loss_last_question * LOSS_LAST_QUESTION_WEIGHT
+            + l1_reg * L1_WEIGHT
+            + l2_reg * L2_WEIGHT
+                    )
 
         return total_loss
 
@@ -201,47 +221,202 @@ def train_dkt_epoch(
         epoch_loss += loss.item()
         epoch_users += 1
     
-    return epoch_loss
-        
+    return epoch_loss / epoch_users 
             
 # === EVALUATION
 
+def collapse_question_predictions(
+    word_ids: np.ndarray,
+    labels: np.ndarray,
+    split_ids: np.ndarray,
+    interaction_ids: np.ndarray,
+    probs_last_q: np.ndarray,
+    ) -> dict[str, np.ndarray]:
+     
+    seen_qs = set()
+    q_labels: list[int] = []
+    q_probs: list[float] = []
+    q_split_ids: list[int] = []
+    q_seen_bool: list[bool] = []
+
+    current_toks: list[int] = []
+    current_labs: list[int] = []
+    current_probs: list[float] = []
+    current_splits: list[int] = []
+
+    prev_interaction_id = None
+
+    for i, interaction_id in enumerate(interaction_ids):
+        if interaction_id == -1:
+            continue # skip padded interactions
+        
+        if prev_interaction_id is not None and interaction_id != prev_interaction_id:
+            toktup = tuple(current_toks) # signature for question text
+
+            q_labels.append(max(current_labs)) # label = 1 on any token (mistake) means label = 1 for the question
+            q_probs.append(max(current_probs)) # take max predicted prob across question tokens as the question-level prediction
+            q_split_ids.append(current_splits[0]) 
+            q_seen_bool.append(toktup in seen_qs) 
+
+            seen_qs.add(toktup)
+            current_toks = []
+            current_labs = []
+            current_probs = []
+            current_splits = []
+
+        prev_interaction_id = interaction_id
+        current_toks.append(word_ids[i])
+        current_labs.append(labels[i])
+        current_probs.append(probs_last_q[i])
+        current_splits.append(split_ids[i])
+    
+    if current_toks: # handle last question
+        toktup = tuple(current_toks)
+        q_labels.append(max(current_labs))
+        q_probs.append(max(current_probs))
+        q_split_ids.append(current_splits[0])
+        q_seen_bool.append(toktup in seen_qs)
+    
+    return {
+        "q_labels": np.array(q_labels), 
+        "q_pred_probs": np.array(q_probs), 
+        "q_split_ids": np.array(q_split_ids), 
+        "q_seen_bool": np.array(q_seen_bool)
+    }
+            
 @torch.no_grad()
 def evaluate_adaptive_qg_dkt(
         dkt: DKT,
         user_data_list: list,
         target_split: list[int],
         device: torch.device,
-        positive_weight: float,
         max_length: int
     ) -> dict[str, object]: 
+
+    assert len(target_split) == 1, "Evaluation only supports evaluating on a single split (e.g. dev or test)"
     
     dkt = dkt.to(device)
     dkt.eval()
 
-    total_loss = 0.0
     total_users = 0
 
+    # token-level predictions
+    tlev_all_labels = []
+    tlev_all_p_err_cur_w = []
+    tlev_all_p_err_last_w = []
+    tlev_all_seen_bool = []
+
+    # question-level predictions
+    qlev_all_labels = []
+    qlev_all_p_err_last_q = []
+    qlev_all_seen_bool = []
+
     for user_data in user_data_list:
+
+        # === PREPARE INPUTS
         kt_inputs = kt_tensor(user_data, max_length=max_length, device=device) 
+
+        word_ids = kt_inputs["word_ids"].squeeze(0).detach().cpu().numpy() # (T, )
+        labels = kt_inputs["labels"].squeeze(0).cpu().detach().numpy() # (T, )
+        split_ids = kt_inputs["split_ids"].squeeze(0).cpu().detach().numpy() # (T, )
+        interaction_ids = kt_inputs["interaction_ids"].squeeze(0).cpu().detach().numpy() # (T, )
 
         state_positions = torch.tensor([ex.state_position for ex in user_data.exercises], dtype=torch.long, device=device) # (N_ex,)
 
         logits = dkt(kt_inputs["word_ids"], kt_inputs["labels"]) # (1, T, V)
 
-        loss = kt_objective(
+        preds = kt_predictions(
             logits=logits,
             word_ids=kt_inputs["word_ids"],
-            labels=kt_inputs["labels"],
-            split_ids=kt_inputs["split_ids"],
             interaction_ids=kt_inputs["interaction_ids"],
-            state_positions=state_positions,
-            target_split=target_split # evaluate on specified split
+            state_positions=state_positions
         )
 
-        total_loss += loss.item()
+        probs_cur_w = torch.sigmoid(preds["logits_cur_step"]).detach().cpu().squeeze(0) # (T, V)
+        probs_last_w = torch.sigmoid(preds["logits_last_step"]).detach().cpu().squeeze(0) # (T, V)
+        probs_last_q = torch.sigmoid(preds["logits_last_question"]).detach().cpu().squeeze(0) # (T,)
+
+        # === SEEN WORD LABELS
+        seen_words = set()
+        
+        seen_word_bool = np.zeros(kt_inputs["word_ids"].shape[1], dtype=bool) # (T,)
+        for i, wid in enumerate(kt_inputs["word_ids"].squeeze(0).cpu().detach().numpy()):
+            seen_word_bool[i] = True if wid in seen_words else False
+            seen_words.add(wid)
+        
+        # === COLLAPSE TO QUESTION-LEVEL PREDICTIONS 
+
+        q_data = collapse_question_predictions(
+            word_ids=word_ids,
+            labels=labels,
+            split_ids=split_ids,
+            interaction_ids=interaction_ids,
+            probs_last_q=probs_last_q.numpy()
+        )
+
+        # ==== token-level
+
+        valid_mask = (split_ids == target_split[0]) # only consider valid labels in target split
+        if valid_mask.sum() == 0:
+            logger.warning(f"No valid labels for user {user_data.user_id} in target split {target_split[0]}")
+            continue
+
+        tlev_all_labels.append(labels[valid_mask])
+        tlev_all_p_err_cur_w.append(probs_cur_w.numpy()[valid_mask])
+        tlev_all_p_err_last_w.append(probs_last_w.numpy()[valid_mask])
+        tlev_all_seen_bool.append(seen_word_bool[valid_mask])
+
+        # ==== question-level
+
+        valid_mask = (q_data["q_split_ids"] == target_split[0])
+        if valid_mask.sum() == 0:
+            logger.warning(f"No valid question-level labels for user {user_data.user_id} in target split {target_split[0]}")
+            continue
+
+        qlev_all_labels.append(q_data["q_labels"][valid_mask])
+        qlev_all_p_err_last_q.append(q_data["q_pred_probs"][valid_mask])
+        qlev_all_seen_bool.append(q_data["q_seen_bool"][valid_mask])
+    
         total_users += 1
+    
+    labels = np.concatenate(tlev_all_labels)
+    p_err_cur_w = np.concatenate(tlev_all_p_err_cur_w)
+    p_err_last_w = np.concatenate(tlev_all_p_err_last_w)
+    seen_bool = np.concatenate(tlev_all_seen_bool)
 
-    avg_loss = total_loss / total_users if total_users else float("nan")
+    q_labels = np.concatenate(qlev_all_labels)
+    p_err_last_q = np.concatenate(qlev_all_p_err_last_q)
+    q_seen_bool = np.concatenate(qlev_all_seen_bool)
 
-    return {"loss": avg_loss, "users": total_users}
+    return {
+        "users": total_users,
+        "token_level": {
+            "count": len(labels),
+
+            "auc_cur_w": roc_auc_score(labels, p_err_cur_w),
+            
+            "auc_last_w": roc_auc_score(labels, p_err_last_w),
+            "seen_auc_last_w": roc_auc_score(labels[seen_bool], p_err_last_w[seen_bool]),
+            "unseen_auc_last_w": roc_auc_score(labels[~seen_bool], p_err_last_w[~seen_bool]),
+
+            "f1_last_w": f1_score(labels, p_err_last_w > 0.5),
+            "f1_cur_w": f1_score(labels, p_err_cur_w > 0.5),
+            
+            "acc_cur_w": ((p_err_cur_w > 0.5) == labels).mean(),
+            "acc_last_w": ((p_err_last_w > 0.5) == labels).mean(),
+
+            
+        },
+        "question_level": {
+            "count": len(q_labels),
+
+            "auc_last_q": roc_auc_score(q_labels, p_err_last_q),
+            "seen_auc_last_q": roc_auc_score(q_labels[q_seen_bool], p_err_last_q[q_seen_bool]),
+            "unseen_auc_last_q": roc_auc_score(q_labels[~q_seen_bool], p_err_last_q[~q_seen_bool]),
+            
+            "f1_last_q": f1_score(q_labels, p_err_last_q > 0.5),
+
+            "acc_last_q": ((p_err_last_q > 0.5) == q_labels).mean(),
+        }
+    }
+            

@@ -67,8 +67,8 @@ def run_aqg_dkt_pipeline(
 
     combined_df = pd.concat([train_df, dev_df, test_df], ignore_index=True)
 
-    train_splits = [1, 2] if train_with_dev else [1]
-    eval_splits = [3] if train_with_dev else [2]
+    train_splits = [1, 2] 
+    eval_splits = [3]
 
     user_data_list, seen_texts = load_user_data(combined_df)
     word_vocab = build_word_vocab(train_df)
@@ -76,12 +76,12 @@ def run_aqg_dkt_pipeline(
     assert user_data_list, "No user data found after loading. Please check the input data and preprocessing steps." 
 
     # === MODEL 
-    dkt = DKT(len(word_vocab), hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS).to(device)
+    dkt = DKT(len(word_vocab), hidden_size=aqg_args.hidden_size, num_layers=aqg_args.num_layers).to(device)
     
-    opt = torch.optim.AdamW(dkt.parameters(), lr=1e-3) # Weighted Adam with decoupled weight decay NOTE
+    opt = torch.optim.AdamW(dkt.parameters(), lr=aqg_args.lr) # Weighted Adam with decoupled weight decay NOTE
 
     total_steps = (EPOCHS * len(user_data_list))
-    warmup_steps = int(WARMUP_RATE * total_steps) # 10% of total steps for warmup
+    warmup_steps = int(aqg_args.warmup_rate * total_steps) # 10% of total steps for warmup
 
     scheduler = get_linear_schedule_with_warmup(opt, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
@@ -111,38 +111,69 @@ def run_aqg_dkt_pipeline(
             target_split=eval_splits,
             device=device,
             max_length=aqg_args.max_seq_len,
-            positive_weight=aqg_args.positive_weight,
         )
 
-        # logger.info(
-        #     "Epoch %d | eval_loss=%.4f | AUC=%.5f | Accuracy=%.5f | F1=%.5f | targets=%d",
-        #     epoch,
-        #     metrics["loss"],
-        #     metrics["auc"],
-        #     metrics["accuracy"],
-        #     metrics["f1"],
-        #     metrics["n_targets"],
-        # )
+        tok_metrics = metrics["token_level"]
+        q_metrics = metrics["question_level"]
 
-        record = mk_record(
-                model_name=model_name,
-                track=track,
-                subset=subset,
-                train_with_dev=train_with_dev, 
-                metrics=metrics,
-                variant=aqg_args.variant,
-                epochs=epoch,
-                tag=tag,
-            )
+        logger.info("users: %d | tokens: %d | questions: %d", metrics["users"], tok_metrics["count"], q_metrics["count"])
+
+        logger.info("TOKEN-LEVEL EVAL:"
+            "Epoch %d | eval_loss=%.4f | AUC=%.5f | AUC (seen)=%.5f | AUC (unseen)=%.5f | Accuracy=%.5f | F1=%.5f",
+            epoch,
+            avg_loss,
+            tok_metrics["auc_last_w"],
+            tok_metrics["seen_auc_last_w"],
+            tok_metrics["unseen_auc_last_w"],
+            tok_metrics["acc_last_w"],
+            tok_metrics["f1_last_w"],
+        )
+
+        logger.info("QUESTION-LEVEL EVAL:"
+            "Epoch %d | AUC=%.5f | AUC (seen)=%.5f | AUC (unseen)=%.5f | Accuracy=%.5f | F1=%.5f",
+            epoch,
+            q_metrics["auc_last_q"],
+            q_metrics["seen_auc_last_q"],
+            q_metrics["unseen_auc_last_q"],
+            q_metrics["acc_last_q"],
+            q_metrics["f1_last_q"],
+        )
+
+        r1 = MetricRecord(
+            model=model_name + "_token_level",
+            track=track,
+            subset=subset if subset is not None else -1,
+            train_with_dev=train_with_dev,
+            variant="",
+            tag=tag,
+            epochs=epoch,
+            auc=tok_metrics["auc_last_w"],
+            acc=tok_metrics["acc_last_w"],
+            f1=tok_metrics["f1_last_w"],
+        )
+
+        r2 = MetricRecord(
+            model=model_name + "_question_level",
+            track=track,
+            subset=subset if subset is not None else -1,
+            train_with_dev=train_with_dev,
+            variant="",
+            tag=tag,
+            epochs=epoch,
+            auc=q_metrics["auc_last_q"],
+            acc=q_metrics["acc_last_q"],
+            f1=q_metrics["f1_last_q"],
+        )
         
-        records.append(record)
+        records.append(r1)
+        records.append(r2)
 
     # == SAVING
     if subset is None and (save_every and epoch % save_every == 0 or epoch == EPOCHS):
         save_path = save_torch(
             model=dkt,
             opt=opt,
-            rec=record,
+            rec=r1,
             extra={
                 "word_vocab": word_vocab,
                 "seen_texts": sorted(seen_texts),
