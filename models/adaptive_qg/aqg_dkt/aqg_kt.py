@@ -24,11 +24,11 @@ L2_WEIGHT = 0.1
 
 #====
 class DKT(nn.Module):
-    def __init__(self, num_words: int, hidden_size: int, num_layers: int):
+    def __init__(self, vocab_size: int, hidden_size: int, num_layers: int):
         super().__init__()
         
-        self.num_words = num_words
-        self.word_embeddings = nn.Embedding(num_words, hidden_size, padding_idx=0)
+        self.num_words = vocab_size
+        self.word_embeddings = nn.Embedding(vocab_size, hidden_size, padding_idx=0)
         self.label_embeddings = nn.Embedding(3, hidden_size, padding_idx=2) # 0, 1, and 2 for pad #NOTE 
 
         self.encoder = nn.LSTM(
@@ -39,7 +39,7 @@ class DKT(nn.Module):
             bias=True
         )
 
-        self.ffn = nn.Linear(hidden_size, num_words)
+        self.ffn = nn.Linear(hidden_size, vocab_size)
         
     def forward(self, word_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -73,7 +73,7 @@ def pad_list(values: list[int], max_length: int, pad_value: int = 0) -> list[int
     
     return values + [pad_value] * (max_length - len(values)) # pad with the specified value
 
-def kt_tensor(user_data: UserData, max_length: int, device: torch.device) -> Dict[str, torch.Tensor]:
+def kt_tensors(user_data: UserData, max_length: int, device: torch.device) -> Dict[str, torch.Tensor]:
     """
     Converts UserData into tensors.
     Each value in dict is a tensor of shape (max_length,).
@@ -122,7 +122,7 @@ def kt_objective(
         split_ids: torch.Tensor, # (B, T)
         interaction_ids: torch.Tensor, # (B, T)
         state_positions: torch.Tensor, # (B, T)
-        target_split: list[int] = [1],
+        target_split: list[int] = [1,2],
         positive_weight: float = 3.0
     ) -> torch.Tensor:
 
@@ -196,7 +196,7 @@ def train_dkt_epoch(
     epoch_users = 0
 
     for user_data in user_data_list:
-        kt_inputs = kt_tensor(user_data, max_length=max_length, device=device) 
+        kt_inputs = kt_tensors(user_data, max_length=max_length, device=device) 
 
         state_positions = torch.tensor([ex.state_position for ex in user_data.exercises], dtype=torch.long, device=device) # (N_ex,)
 
@@ -314,7 +314,7 @@ def evaluate_adaptive_qg_dkt(
     for user_data in user_data_list:
 
         # === PREPARE INPUTS
-        kt_inputs = kt_tensor(user_data, max_length=max_length, device=device) 
+        kt_inputs = kt_tensors(user_data, max_length=max_length, device=device) 
 
         word_ids = kt_inputs["word_ids"].squeeze(0).detach().cpu().numpy() # (T, )
         labels = kt_inputs["labels"].squeeze(0).cpu().detach().numpy() # (T, )

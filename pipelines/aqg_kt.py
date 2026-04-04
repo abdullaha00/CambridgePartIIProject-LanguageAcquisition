@@ -7,8 +7,12 @@ from transformers import get_linear_schedule_with_warmup
 
 from data_processing.data_parquet import get_parquet
 from db.log_db import MetricRecord
-from models.adaptive_qg.adaptive_data import MAX_SEQ_LEN, build_word_vocab, load_user_data
-from models.adaptive_qg.aqg_kt import (
+from models.adaptive_qg.aqg_dkt.adaptive_data import (
+    MAX_SEQ_LEN,
+    build_word_vocab,
+    load_user_data,
+)
+from models.adaptive_qg.aqg_dkt.aqg_kt import (
     DKT,
     HIDDEN_SIZE,
     NUM_LAYERS,
@@ -34,7 +38,6 @@ def parse_aqg_kt_args(aqg_args=None):
     return p.parse_args(aqg_args)
 
 def run_aqg_dkt_pipeline(
-        model_name: str,
         track: str,
         subset: int | None,
         train_with_dev: bool,
@@ -53,6 +56,7 @@ def run_aqg_dkt_pipeline(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     logger.info("Starting Adaptive QG KT Pipeline with args: %s", vars(aqg_args))
+    logger.info("Subset: %s | Train with Dev: %s | Epochs: %d | Eval every: %d", subset, train_with_dev, EPOCHS, eval_every)
     
     # ==== DATA LOADING AND PREPARATION
     train_df = get_parquet(track, "train", aqg_args.variant, subset=subset)
@@ -65,13 +69,11 @@ def run_aqg_dkt_pipeline(
     dev_df["split"] = "dev"
     test_df["split"] = "test"
 
-    combined_df = pd.concat([train_df, dev_df, test_df], ignore_index=True)
-
     train_splits = [1, 2] 
     eval_splits = [3]
 
-    user_data_list, seen_texts = load_user_data(combined_df)
-    word_vocab = build_word_vocab(train_df)
+    user_data_list, seen_texts = load_user_data(train_df, dev_df, test_df)
+    word_vocab = build_word_vocab(pd.concat([train_df, dev_df], ignore_index=True))
 
     assert user_data_list, "No user data found after loading. Please check the input data and preprocessing steps." 
 
@@ -101,7 +103,7 @@ def run_aqg_dkt_pipeline(
             positive_weight=aqg_args.positive_weight,
         )
 
-        logger.info("Epoch %d | train_loss=%.4f", epoch, avg_loss/len(user_data_list))
+        logger.info("Epoch %d | train_loss=%.4f", epoch, avg_loss)
 
         # === EVALUATION
 
@@ -140,9 +142,9 @@ def run_aqg_dkt_pipeline(
         )
 
         r1 = MetricRecord(
-            model=model_name + "_token_level",
+            model="adaptive_qg_dkt" + "_token_level",
             track=track,
-            subset=subset if subset is not None else -1,
+            subset=subset,
             train_with_dev=train_with_dev,
             variant="",
             tag=tag,
@@ -153,9 +155,9 @@ def run_aqg_dkt_pipeline(
         )
 
         r2 = MetricRecord(
-            model=model_name + "_question_level",
+            model="adaptive_qg_dkt" + "_question_level",
             track=track,
-            subset=subset if subset is not None else -1,
+            subset=subset,
             train_with_dev=train_with_dev,
             variant="",
             tag=tag,
@@ -183,4 +185,4 @@ def run_aqg_dkt_pipeline(
         )
         logger.info("Checkpoint at epoch %d saved to %s", epoch, save_path)
 
-    return records
+    return records, dkt

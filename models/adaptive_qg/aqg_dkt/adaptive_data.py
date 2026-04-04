@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-MAX_SEQ_LEN = 1024
+MAX_SEQ_LEN = 512
 
 @dataclass
 class ExerciseRecordDF:
@@ -157,21 +157,17 @@ def sample_keywords(toks: List[str], pos_tags: List[str], rate: float) -> List[s
 
     return sampled_toks
 
-def load_user_data(df: pd.DataFramem) -> pd.DataFrame:
+def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.DataFrame) -> pd.DataFrame:
     """
     Loads user data from token-level dataframe, collapsing to exercise-level and including labels.
     """
 
-    # assume marked
-    train_df = df[df["split"] == "train"]
-    dev_df = df[df["split"] == "dev"]
-    test_df = df[df["split"] == "test"]
 
+    logger.info(f"Train samples: {len(df_train)}, Dev samples: {len(df_dev)}, Test samples: {len(df_test)}")
     
-    logger.info(f"Train samples: {len(train_df)}, Dev samples: {len(dev_df)}, Test samples: {len(test_df)}")
-    train_recs = collapse_with_labels(train_df, 1)
-    dev_recs = collapse_with_labels(dev_df, 2)
-    test_recs = collapse_with_labels(test_df, 3)
+    train_recs = collapse_with_labels(df_train, 1)
+    dev_recs = collapse_with_labels(df_dev, 2)
+    test_recs = collapse_with_labels(df_test, 3)
 
     logger.info(f"Collapsed to exercises - Train: {len(train_recs)}, Dev: {len(dev_recs)}, Test: {len(test_recs)}")
     # RANDOM 80% sample for "seen"
@@ -185,11 +181,12 @@ def load_user_data(df: pd.DataFramem) -> pd.DataFrame:
             user_records[rec.user_id] = []
         user_records[rec.user_id].append(rec)
 
+    comb_train_df = pd.concat([df_train, df_dev], ignore_index=True)
     # Compute non-adaptive difficulty from training data
-    word_difficulty = compute_difficulty(train_df + dev_df) 
+    word_difficulty = compute_difficulty(comb_train_df) 
     
     # Build word vocab from training data
-    word_vocab = build_word_vocab(train_df + dev_df)
+    word_vocab = build_word_vocab(comb_train_df)
 
     unk_id, bos_id, eos_id = word_vocab["<unk>"], word_vocab["<bos>"], word_vocab["<eos>"]
     users: List[UserData] = []

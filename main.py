@@ -1,8 +1,10 @@
 
 import argparse
+import sys
 import torch
 import numpy as np
-from db.log_db import log_run
+from db.log_db import GenerationRecord, collect_run_provenance, log_generation_run, log_run
+from pipelines.aqg_qg import run_aqg_qg_pipeline
 from pipelines.dkt import run_dkt_pipeline, parse_dkt_args
 from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
 from time import perf_counter
@@ -39,7 +41,7 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt"],
+               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt", "aqg_qg"],
                help="Which model to run")
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
 p.add_argument("-d", "--train-with-dev", action="store_true", default=False)
@@ -66,8 +68,11 @@ if EPOCHS is not None and EVAL_EVERY is None:
     EVAL_EVERY = max(1, EPOCHS // 5)  # default to evaluating 5 times per run
 
 #===== CONFIG
-torch.manual_seed(42)
-np.random.seed(42)
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+
+provenance = collect_run_provenance(seed=SEED, argv=[sys.argv[0], *sys.argv[1:]])
 
 #-- start timer
 
@@ -76,10 +81,11 @@ start_time = perf_counter()
 #========= DISPATCH
 
 if MODEL == "lr":
-    metrics = run_lr_pipeline(
+    records = run_lr_pipeline(
         TRACK=TRACK,
         SUBSET=SUBSET,
-        train_with_dev=TRAIN_WITH_DEV
+        train_with_dev=TRAIN_WITH_DEV,
+        tag=args.tag,
     )
 
 elif MODEL == "gbdt":
@@ -87,7 +93,8 @@ elif MODEL == "gbdt":
         track=TRACK, 
         train_with_dev=TRAIN_WITH_DEV, 
         SUBSET=SUBSET,
-        next_args=next_args
+        next_args=next_args,
+        tag=args.tag,
     )
 
 elif MODEL == "dkt" or MODEL == "bert_dkt":
@@ -99,7 +106,8 @@ elif MODEL == "dkt" or MODEL == "bert_dkt":
         ITEM_LEVEL=ITEM_LEVEL,
         epochs=EPOCHS,
         eval_every=EVAL_EVERY,
-        next_args=next_args
+        next_args=next_args,
+        tag=args.tag,
     )
 
 elif MODEL == "lmkt":
@@ -110,6 +118,7 @@ elif MODEL == "lmkt":
         EPOCHS=EPOCHS,
         eval_every=EVAL_EVERY,
         save_every=args.save_every,
+        tag=args.tag,
     )
 
 elif MODEL == "qg":
@@ -118,7 +127,8 @@ elif MODEL == "qg":
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
         EPOCHS=EPOCHS,
-        extra_args=next_args
+        extra_args=next_args,
+        tag=args.tag,
     )
 
 elif MODEL == "sdkt" or MODEL == "vdkt":
@@ -136,9 +146,18 @@ elif MODEL == "sdkt" or MODEL == "vdkt":
     )
 
 elif MODEL == "aqg_dkt":
-    
-    records = run_aqg_dkt_pipeline(
-        model_name=MODEL,
+    records, _ = run_aqg_dkt_pipeline(
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=TRAIN_WITH_DEV,
+        EPOCHS=EPOCHS,
+        eval_every=EVAL_EVERY,
+        next_args=next_args,
+        tag=args.tag,
+        save_every=args.save_every,
+    )
+elif MODEL == "aqg_qg":
+    records = run_aqg_qg_pipeline(
         track=TRACK,
         subset=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
@@ -162,7 +181,10 @@ if not args.no_log:
     logger.info(f"Total runtime (min): {runtime_min:.2f}")
 
     for i, rec in enumerate(records):
-        log_run(rec, i, runtime_min)
+        if isinstance(rec, GenerationRecord):
+            log_generation_run(rec, i, runtime_min, provenance=provenance)
+        else:
+            log_run(rec, i, runtime_min, provenance=provenance)
 
     logger.info(f"{len(records)} runs logged to database." if len(records) > 1 else
                 "1 run logged to database.")
