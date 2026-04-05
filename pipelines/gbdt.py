@@ -63,7 +63,7 @@ def cast_cats(df_train, df_test, cat_cols=CAT_FEATS):
         df_test[col] = pd.Categorical(df_test[col], categories=cats)
     return df_train, df_test
 
-def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_args=None):
+def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_args=None, tag=None):
 
     logger.info(f"Running GBDT pipeline for track {track} with train_with_dev={train_with_dev} and SUBSET={SUBSET}")
 

@@ -4,7 +4,7 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 import numpy as np
-from models.SDKT.SDKT_model import SDKTModel
+from models.SDKT.SDKT import SDKTModel
 from models.utils import compute_metrics
 
 class VDKTModel(SDKTModel):

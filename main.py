@@ -3,7 +3,7 @@ import argparse
 import sys
 import torch
 import numpy as np
-from db.log_db import GenerationRecord, collect_run_provenance, log_generation_run, log_run
+from db.log_db import GenerationRecord, MetricRecord, log_run_g, log_run_m
 from pipelines.aqg_qg import run_aqg_qg_pipeline
 from pipelines.dkt import run_dkt_pipeline, parse_dkt_args
 from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
@@ -12,7 +12,6 @@ from pipelines.lmkt import parse_lmkt_args, run_lmkt_pipeline
 from pipelines.lr import run_lr_pipeline
 from pipelines.aqg_kt import run_aqg_dkt_pipeline
 import logging
-from transformers import logging as hf_logging
 from rich.logging import RichHandler
 from pipelines.qg import parse_qg_args, run_qg_pipeline
 import warnings
@@ -20,8 +19,6 @@ import warnings
 from pipelines.seqdkt import run_sdkt_pipeline
 
 warnings.filterwarnings("ignore", message=".*loss_type.*")
-
-hf_logging.set_verbosity_error()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,8 +68,6 @@ if EPOCHS is not None and EVAL_EVERY is None:
 SEED = 42
 torch.manual_seed(SEED)
 np.random.seed(SEED)
-
-provenance = collect_run_provenance(seed=SEED, argv=[sys.argv[0], *sys.argv[1:]])
 
 #-- start timer
 
@@ -181,10 +176,11 @@ if not args.no_log:
     logger.info(f"Total runtime (min): {runtime_min:.2f}")
 
     for i, rec in enumerate(records):
-        if isinstance(rec, GenerationRecord):
-            log_generation_run(rec, i, runtime_min, provenance=provenance)
+
+        if isinstance(rec, MetricRecord):
+            log_run_m(rec, index=i, runtime_min=runtime_min)
         else:
-            log_run(rec, i, runtime_min, provenance=provenance)
+            log_run_g(rec, index=i, runtime_min=runtime_min)
 
     logger.info(f"{len(records)} runs logged to database." if len(records) > 1 else
                 "1 run logged to database.")

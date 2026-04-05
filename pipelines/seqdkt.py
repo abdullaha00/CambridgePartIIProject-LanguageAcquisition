@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from tqdm import tqdm
 from db.log_db import MetricRecord
 from models.SDKT.build_data import build_sdkt_dataloaders
-from models.SDKT.SDKT_model import SDKTModel
+from models.SDKT.SDKT import SDKTModel
 from models.SDKT.VDKT import VDKTModel
 from models.SDKT.fasttext import load_fasttext_vecs
 from pipelines.common.checkpointing import save_torch, load_torch_ckpt

@@ -12,7 +12,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 
 from data_processing.data_parquet import get_parquet
-from db.log_db import MetricRecord
+from db.log_db import GenerationRecord, MetricRecord
 from models.adaptive_qg.aqg.aqg import DCDecoder, ExerciseGenerator, build_qg_batch_user, tokenize_qg_input, tokenize_qg_output
 from models.adaptive_qg.aqg.aqg_data import build_subword_mapping
 from models.adaptive_qg.aqg.nlp import ensure_nltk
@@ -43,7 +43,7 @@ MAX_OUTPUT_LENGTH = 30
 NUM_BEAMS = 4
 LOOKAHEAD_STEPS = 2
 
-MAX_EVAL_EXERCISES = 100
+MAX_EVAL_EXERCISES = 500
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +99,10 @@ def run_aqg_qg_pipeline(
     eval_splits = [3]
 
     user_data_list, seen_texts = load_user_data(train_df, dev_df, test_df)
-    #word_vocab = build_word_vocab(comb_train_df)
 
     assert user_data_list, "No user data found after loading. Please check the input data and preprocessing steps."
     
-    assert aqg_args.dkt_path is not None # memory
+    # assert aqg_args.dkt_path is not None # uncomment to require pretrained DKT
 
     # EITHER LOAD DKT OR TRAIN FROM SCRATCH
     if aqg_args.dkt_path:
@@ -137,6 +136,7 @@ def run_aqg_qg_pipeline(
             save_every=save_every,
         )
 
+        word_vocab = build_word_vocab(comb_train_df)
 
     # shuffle user data
     random.shuffle(user_data_list)
@@ -162,8 +162,7 @@ def run_aqg_qg_pipeline(
     warmup_steps = int(aqg_args.warmup_rate * total_steps)
     scheduler = get_linear_schedule_with_warmup(opt, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
-    records: list[MetricRecord] = []
-
+    
     # === TRAINING LOOP
     for epoch in range(1, EPOCHS+1):
 
@@ -384,7 +383,8 @@ def run_aqg_qg_pipeline(
                 split = "seen" if ex.text in seen_texts else "unseen"
                 bucket = accum[split]
 
-                logger.info(f"User {user_data.user_id} - Ref: {ex.text} | Gen: {generated_text} | Target Diff: {target_difficulty:.4f}")
+                if evaluated_ex_count < 5: # log some examples for sanity check
+                    logger.info(f"User {user_data.user_id} - Ref: {ex.text} | Gen: {generated_text} | Target Diff: {target_difficulty:.4f}")
 
                 bucket["ref_exercises"].append([ref_toks]) # list of lists for corpus_bleu
                 bucket["gen_exercises"].append(gen_toks)
@@ -405,12 +405,14 @@ def run_aqg_qg_pipeline(
                     logger.info(f"Reached maximum evaluation exercise count of {MAX_EVAL_EXERCISES}. Stopping evaluation.")
                     break
 
+        records: list[GenerationRecord] = []
+
         for split, bucket in accum.items():
             bleu = nltk.translate.bleu_score.corpus_bleu(
                 bucket["ref_exercises"],
                 bucket["gen_exercises"],
                 weights=[0.25, 0.25, 0.25, 0.25]
-            ) * 100.0 # sacrebleu returns score in [0, 1], convert to percentage
+            ) * 100.0
 
             metrics = {
                 "bleu": bleu,
@@ -422,9 +424,25 @@ def run_aqg_qg_pipeline(
 
             print(f"=== {split.upper()} EXERCISES ===")
             print(metrics)
-                
 
-    return []
+            gen_record = GenerationRecord(
+                model="aqg_qg",
+                track=track,
+                subset=subset,
+                train_with_dev=train_with_dev,
+                variant=aqg_args.variant,
+                tag=tag,
+                bleu=metrics["bleu"],
+                meteor=metrics["meteor"],
+                d_mae=metrics["dmae"],
+                invalid_rate=metrics["invalid_rate"],
+                kc_coverage=metrics["kc_coverage"],
+                n_generated_questions=len(bucket["gen_exercises"])
+            )
+
+        records.append(gen_record)
+
+    return records
 
         
         
