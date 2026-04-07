@@ -98,7 +98,6 @@ def run_sdkt_pipeline(
     optimizer = torch.optim.Adam(model.parameters(), lr=sdkt_args.lr)
     start_epoch = 1
 
-   
     # === LOAD FROM CHECKPOINT (if resuming)
     if resume_from is not None:
         logger.info(f"Resuming from checkpoint: {resume_from}")
@@ -187,6 +186,5 @@ def run_sdkt_pipeline(
                     
                 ckpt_path = save_torch(model, optimizer, rec, extra=extra_data)
                 logger.info(f"Checkpoint at epoch {epoch} saved to {ckpt_path}")
-
 
     return records

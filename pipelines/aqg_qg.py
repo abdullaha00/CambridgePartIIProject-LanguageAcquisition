@@ -33,7 +33,7 @@ from pipelines.common.common import mk_record
 
 MAX_TRAIN_USERS = 100
 JOINT_START = 3
-MINIBATCH_SIZE = 64
+MINIBATCH_SIZE = 32
 TEMPERATURE = 2.0
 MIN_HIST = 5
 INC_EX_OFFSET = MIN_HIST
@@ -58,6 +58,7 @@ def parse_aqg_kt_args(aqg_args=None):
     p.add_argument("--max-seq-len", type=int, default=MAX_SEQ_LEN)
     p.add_argument("--epochs", type=int, default=5)
     p.add_argument("--dkt-path", type=str, default=None, help="Path to a .ckpt file to initialize DKT model from")
+    p.add_argument("--inner-batch-size", type=int, default=MINIBATCH_SIZE)
     return p.parse_args(aqg_args)
 
 def run_aqg_qg_pipeline(
@@ -98,12 +99,6 @@ def run_aqg_qg_pipeline(
     train_splits = [1, 2]
     eval_splits = [3]
 
-    user_data_list, seen_texts = load_user_data(train_df, dev_df, test_df)
-
-    assert user_data_list, "No user data found after loading. Please check the input data and preprocessing steps."
-    
-    # assert aqg_args.dkt_path is not None # uncomment to require pretrained DKT
-
     # EITHER LOAD DKT OR TRAIN FROM SCRATCH
     if aqg_args.dkt_path:
         logger.info(f"Resuming from checkpoint: {aqg_args.dkt_path}")
@@ -138,6 +133,20 @@ def run_aqg_qg_pipeline(
 
         word_vocab = build_word_vocab(comb_train_df)
 
+    user_data_list, seen_texts = load_user_data(
+        train_df,
+        dev_df,
+        test_df,
+        word_vocab=word_vocab,
+        keyword_sample_rate=0.3,
+        max_user_token_history=2500,
+        random_seed=42,
+    )
+
+    assert user_data_list, "No user data found after loading in pipeline; check data loading"
+    
+    # assert aqg_args.dkt_path is not None # uncomment to require pretrained DKT
+
     # shuffle user data
     random.shuffle(user_data_list)
     user_data_list = user_data_list[:MAX_TRAIN_USERS]
@@ -147,6 +156,8 @@ def run_aqg_qg_pipeline(
     # === MODEL
 
     gen_model = ExerciseGenerator(qg_model_name, vocab_size=len(word_vocab)).to(device)
+    gen_model.model.gradient_checkpointing_enable()
+    
     tokenizer = gen_model.tokenizer
     
     sw_map, oov_mask = build_subword_mapping(word_vocab, tokenizer, device)
@@ -161,6 +172,8 @@ def run_aqg_qg_pipeline(
     total_steps = (EPOCHS * len(user_data_list))
     warmup_steps = int(aqg_args.warmup_rate * total_steps)
     scheduler = get_linear_schedule_with_warmup(opt, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+    use_amp = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     
     # === TRAINING LOOP

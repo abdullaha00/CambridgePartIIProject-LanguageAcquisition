@@ -118,6 +118,8 @@ class ExerciseGenerator(nn.Module):
         decoder_input_ids: torch.Tensor,  # (B, D)
         labels: torch.Tensor = None,  # (B, D)
         extra_features: torch.Tensor = None,  # (B, F)
+        past_key_values = None,
+        use_cache: bool = False,
     ) -> str:
         
         input_embds_controlled = self.get_input_embeddings(input_ids, difficulty, student_state, extra_features)  # (B, T, E)
@@ -126,7 +128,9 @@ class ExerciseGenerator(nn.Module):
             inputs_embeds=input_embds_controlled,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            labels=labels
+            labels=labels,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
         )
 
         return outputs

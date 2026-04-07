@@ -157,7 +157,15 @@ def sample_keywords(toks: List[str], pos_tags: List[str], rate: float) -> List[s
 
     return sampled_toks
 
-def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.DataFrame) -> pd.DataFrame:
+def load_user_data(
+    df_train: pd.DataFrame,
+    df_dev: pd.DataFrame,
+    df_test: pd.DataFrame,
+    word_vocab: Dict[str, int] | None = None,
+    keyword_sample_rate: float = 0.3,
+    max_user_token_history: int | None = 2500,
+    random_seed: int = 42,
+) -> pd.DataFrame:
     """
     Loads user data from token-level dataframe, collapsing to exercise-level and including labels.
     """
@@ -172,7 +180,7 @@ def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.Dat
     logger.info(f"Collapsed to exercises - Train: {len(train_recs)}, Dev: {len(dev_recs)}, Test: {len(test_recs)}")
     # RANDOM 80% sample for "seen"
     all_unique_texts = sorted(set(rec.text for recs in (train_recs, dev_recs, test_recs) for rec in recs))
-    seen_texts = set(pd.Series(all_unique_texts).sample(frac=0.8, random_state=42))
+    seen_texts = set(pd.Series(all_unique_texts).sample(frac=0.8, random_state=random_seed))
     
     user_records: Dict[int, List[ExerciseRecord]] = defaultdict(list)
 
@@ -185,8 +193,9 @@ def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.Dat
     # Compute non-adaptive difficulty from training data
     word_difficulty = compute_difficulty(comb_train_df) 
     
-    # Build word vocab from training data
-    word_vocab = build_word_vocab(comb_train_df)
+    # Expect word vocab, but build if not provided
+    if word_vocab is None:
+        word_vocab = build_word_vocab(comb_train_df)
 
     unk_id, bos_id, eos_id = word_vocab["<unk>"], word_vocab["<bos>"], word_vocab["<eos>"]
     users: List[UserData] = []
@@ -202,7 +211,7 @@ def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.Dat
 
         raw_tok_count = sum(len(rec.tokens) for rec in recs)
 
-        if raw_tok_count > 2500: # NOTE: skip users with too much data (reference)
+        if max_user_token_history is not None and raw_tok_count > max_user_token_history:
             continue
             
         if not any(rec.split == 3 for rec in recs): # skip users with no test data
@@ -251,7 +260,7 @@ def load_user_data(df_train: pd.DataFrame, df_dev: pd.DataFrame, df_test: pd.Dat
                 state_position=state_position,
                 non_adaptive_difficulty=non_adaptive_difficulty,
                 adaptive_difficulty=sum(rec.labels), 
-                keywords=sample_keywords(rec.tokens, rec.pos_tags, rate=0.3)
+                keywords=sample_keywords(rec.tokens, rec.pos_tags, rate=keyword_sample_rate)
             ))
 
             for tok, lab in zip(rec.tokens, rec.labels):

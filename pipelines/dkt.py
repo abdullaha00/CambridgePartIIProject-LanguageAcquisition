@@ -17,7 +17,7 @@ def parse_dkt_args(dkt_args=None):
     return args
     
 
-def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args):
+def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag=None):
 
     dkt_args = parse_dkt_args(next_args)
 
@@ -72,7 +72,8 @@ def run_dkt_pipeline(model_name, TRACK,SUBSET,train_with_dev, ITEM_LEVEL, epochs
                 auc=metrics.get("auc"),
                 acc=metrics.get("accuracy"),
                 f1=metrics.get("f1"),
-                epochs=epochs
+                epochs=epochs,
+                tag=tag
             )
             records.append(record)
 

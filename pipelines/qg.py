@@ -28,7 +28,7 @@ def parse_qg_args(qg_args=None):
     args = p.parse_args(qg_args)
     return args
 
-def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None):
+def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=None):
     
     logger.info("Running QG pipeline")
     args = parse_qg_args(extra_args)
@@ -36,7 +36,6 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None):
     # ===== TRAIN LMKT
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
-
 
     if args.load_path is not None:
         logger.info(f"Loading LMKT model from {args.load_path}")

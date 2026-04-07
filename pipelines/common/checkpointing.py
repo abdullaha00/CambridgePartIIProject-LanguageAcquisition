@@ -81,7 +81,8 @@ def save_torch(
 
 
 def load_torch_ckpt(path: str | Path) -> dict:
-    return torch.load(path, weights_only=False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.load(path, weights_only=False, map_location=device)
 
 def save_lgbm(model, rec: MetricRecord) -> Path:
     
@@ -99,4 +100,3 @@ def save_lgbm(model, rec: MetricRecord) -> Path:
     model.booster_.save_model(save_path)
     logger.info(f"Saved LightGBM model to {save_path} and metrics to {save_path_mets}")
     return save_path
-

@@ -1,4 +1,4 @@
-from data_processing.data_parquet import load_train_and_eval_df
+from data_processing.data_parquet import load_train_and_eval_df, load_train_and_eval_df_strict
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
 
     #=== LOAD DATA
-    df_train, df_test = load_train_and_eval_df(TRACK, "reprocessed", train_with_dev, subset=SUBSET)
+    df_train, df_test, test_labels = load_train_and_eval_df_strict(TRACK, "reprocessed", train_with_dev, subset=SUBSET)
 
     X_train, Y_train = df_train.iloc[:, :-1], df_train['label']
-    X_test, Y_test = df_test.iloc[:, :-1], df_test['label']
+    X_test, Y_test = df_test.iloc[:, :], test_labels
 
     # === ENCODE DATA
 
