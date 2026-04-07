@@ -87,3 +87,18 @@ def load_train_and_eval_df(track: str, variant: str, train_with_dev: bool, subse
         df_eval = df_test_data
 
     return df_train, df_eval
+
+def load_train_and_eval_df_strict(track: str, variant: str, train_with_dev: bool, subset=None, columns=None):
+
+    df_train, df_eval = load_train_and_eval_df(track, variant, train_with_dev, subset=subset, columns=columns)
+
+    # PREVENT TEST-LEAKAGE: drop label column from eval df and store separately
+    eval_labels = df_eval["label"].values
+    df_eval = df_eval.drop(columns=["label"])
+
+    return df_train, df_eval, eval_labels
+
+def merge_eval_df_labels(df_eval: pd.DataFrame, eval_labels: np.ndarray) -> pd.DataFrame:
+    df_eval = df_eval.copy()
+    df_eval["label"] = eval_labels
+    return df_eval

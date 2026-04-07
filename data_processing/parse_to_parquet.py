@@ -152,6 +152,7 @@ def enforce_schema(df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
 
+    # disable to hide labels at parse time
     use_test_key = True
 
     for track in tqdm(TRACKS, desc="language track"):
