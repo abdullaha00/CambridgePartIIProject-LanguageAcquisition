@@ -11,10 +11,9 @@ from pipelines.common.checkpointing import save_torch
 
 logger = logging.getLogger(__name__)
 
+# Add any LM-KT specific arguments here, future use (none currently)
 def parse_lmkt_args(dkt_args=None):
-    # PARSE SPECIFIC FLAGS
-    p = argparse.ArgumentParser(description="LMKT Pipeline Args")
-    p.add_argument("-e", "--epochs", type=int, default=5)
+    p = argparse.ArgumentParser(description="LM-KT Pipeline Args")
     args = p.parse_args(dkt_args)
     return args
 
@@ -23,7 +22,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
     if save_every is None:
         save_every = eval_every
 
-    logger.info("Running DKT pipeline for LM-KT")
+    logger.info("Running LM-KT pipeline")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
     

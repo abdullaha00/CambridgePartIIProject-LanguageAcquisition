@@ -116,7 +116,8 @@ def run_sdkt_pipeline(
             np.random.set_state(rng_state["numpy"])
             if rng_state.get("cuda") is not None and torch.cuda.is_available():
                 torch.cuda.set_rng_state_all(rng_state["cuda"])
-            
+        
+        # extra scheuduler info stored
         global_step = ckpt.get("extra", {}).get("final_global_step", 0)
         total_steps = ckpt.get("extra", {}).get("total_steps", EPOCHS * len(data_bundle.train_dl))
 
@@ -126,6 +127,7 @@ def run_sdkt_pipeline(
         total_steps = EPOCHS * len(data_bundle.train_dl)
     
     records = []
+    loss_history = []
 
     for epoch in range(start_epoch, EPOCHS+1):  
         model.train()
@@ -156,6 +158,8 @@ def run_sdkt_pipeline(
             global_step += 1
 
         avg_loss = total_loss / len(data_bundle.train_dl)
+        loss_history.append(avg_loss)
+
         logger.info(f"Epoch {epoch} - Train Loss: {avg_loss:.4f}")
 
         if epoch % eval_every == 0:
@@ -186,5 +190,7 @@ def run_sdkt_pipeline(
                     
                 ckpt_path = save_torch(model, optimizer, rec, extra=extra_data)
                 logger.info(f"Checkpoint at epoch {epoch} saved to {ckpt_path}")
+
+    logger.info("SDKT loss history: %s", loss_history)
 
     return records

@@ -16,7 +16,7 @@ from rich.logging import RichHandler
 from pipelines.qg import parse_qg_args, run_qg_pipeline
 import warnings
 
-from pipelines.seqdkt import run_sdkt_pipeline
+from pipelines.sdkt import run_sdkt_pipeline
 
 warnings.filterwarnings("ignore", message=".*loss_type.*")
 
