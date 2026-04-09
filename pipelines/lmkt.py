@@ -17,7 +17,7 @@ def parse_lmkt_args(dkt_args=None):
     args = p.parse_args(dkt_args)
     return args
 
-def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None):
+def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None, next_args=None, tag=None) -> list[MetricRecord]:
 
     if save_every is None:
         save_every = eval_every
@@ -50,9 +50,15 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
         logger.info(f"Epoch {epoch} loss: {loss}")
 
         if epoch % eval_every == 0:
-            metrics = model.evaluate_metrics(lmkt_data.eval_histories, lmkt_data.pref_ns)
-            logger.info("Epoch %d | AUC=%.5f | Accuracy=%.5f | F1=%.5f",
-                        epoch, metrics["auc"], metrics["accuracy"], metrics["f1"])
+            metrics = model.evaluate_metrics(
+                lmkt_data.eval_histories, 
+                lmkt_data.pref_ns,
+                lmkt_data.train_ex_texts,
+                lmkt_data.eval_ex_texts
+            )
+            
+            logger.info("Epoch %d | AUC=%.5f | AUC (seen)=%.5f | AUC (unseen)=%.5f | Accuracy=%.5f | F1=%.5f",
+                        epoch, metrics["auc"], metrics["auc_seen"], metrics["auc_unseen"], metrics["accuracy"], metrics["f1"])
 
             rec = MetricRecord(
                 model="lmkt",
@@ -63,6 +69,8 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
                 auc=metrics.get("auc"),
                 acc=metrics.get("accuracy"),
                 f1=metrics.get("f1"),
+                auc_seen=metrics.get("auc_seen"),
+                auc_unseen=metrics.get("auc_unseen"),
                 epochs=epoch,
             )
             records.append(rec)

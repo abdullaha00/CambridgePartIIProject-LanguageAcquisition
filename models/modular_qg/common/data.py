@@ -16,13 +16,14 @@ def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
     if df["label"].isna().any():
         raise ValueError("Some labels are missing; cannot collapse to exercise level.")
 
-    ex_key = df["tok_id"].str.slice(0, 10)
-    df["ex_key"] = ex_key
+    if "ex_key" not in df.columns:
+        ex_key = df["tok_id"].str.slice(0, 10)
+        df["ex_key"] = ex_key
 
     return (
 
         df.groupby(["ex_key", "user_id"], sort=False).agg(
-            #prompt=("tok", " ".join),
+            tok_text=("tok", " ".join),
             # exercise is correct if ALL tokens are correct (label 0)
             correct=("label", lambda x: int(np.all(x == 0)))
         ).reset_index()

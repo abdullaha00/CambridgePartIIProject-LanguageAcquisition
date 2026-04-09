@@ -17,6 +17,8 @@ class MetricRecord:
     f1: float
     variant: Optional[str] = None
     epochs: Optional[int] = None
+    auc_seen: Optional[float] = None
+    auc_unseen: Optional[float] = None
     tag: Optional[str] = None
 
 @dataclass(frozen=True)
@@ -56,6 +58,8 @@ CREATE TABLE IF NOT EXISTS runs (
     auc REAL,
     f1 REAL,
     accuracy REAL,
+    auc_seen REAL,
+    auc_unseen REAL,
     runtime_min REAL
 );"""
 
@@ -116,14 +120,14 @@ def log_run_m(
         c = conn.cursor()
         c.execute(
             """
-            INSERT INTO runs (run_id, model_type, track, subset, train_with_dev, variant, tag, epochs, auc, accuracy, f1, runtime_min)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (run_id, model_type, track, subset, train_with_dev, variant, tag, epochs, auc, accuracy, f1, auc_seen, auc_unseen, runtime_min)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, 
 
             (run_id, record.model, record.track,
               record.subset, record.train_with_dev, record.variant, record.tag, record.epochs,
-              record.auc, record.acc, record.f1, runtime_min))
-    
+              record.auc, record.acc, record.f1, record.auc_seen, record.auc_unseen, runtime_min))
+
         conn.commit()
 
 def log_run_g(

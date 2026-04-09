@@ -65,9 +65,16 @@ class LMKTModel(torch.nn.Module):
         avg_loss = total_loss / len(dataloader)
         return avg_loss
 
-    def evaluate_metrics(self, histories: Dict[str, List[Tuple[str, int]]], eval_pref_ns: Dict[str, int]):
+    def evaluate_metrics(
+            self, 
+            histories: Dict[str, List[Tuple[str, int]]],
+            eval_pref_ns: Dict[str, int],
+            train_ex_texts: set[str],
+            eval_ex_texts: Dict[str, List[str]]
+        ) -> dict[str, float]:
+
         """
-        Evaluate AUC on histories
+        Evaluate LMKT on histories
         """
         self.eval()
         self.to(self.device)
@@ -84,6 +91,15 @@ class LMKTModel(torch.nn.Module):
         all_preds_y = []
         all_preds_n = []
 
+        all_seen_mask = []
+        all_prompt_texts = []
+        all_ex_texts = []
+
+        assert train_ex_texts is not None and eval_ex_texts is not None 
+        
+        eval_ex_set = {t for text_list in eval_ex_texts.values() for t in text_list}
+        unseen_ex_texts = eval_ex_set - train_ex_texts
+
         with torch.no_grad():
             for uid, hist in tqdm(histories.items(), desc="Evaluating", leave=False):
                 # hist = [(q1, y1), (q2, y2), ...]
@@ -96,7 +112,7 @@ class LMKTModel(torch.nn.Module):
                 text = history_text(hist)
                 ids = tok.encode(text, add_special_tokens=False, truncation=False, return_tensors="pt").to(self.device)
                 
-                # We do not evaluate on the train prefix of the sequene
+                # We do not evaluate on the train prefix of the sequence
 
                 assert uid in eval_pref_ns, f"User {uid} not in eval_pref_ns"
                 pref_n = eval_pref_ns[uid]
@@ -106,12 +122,19 @@ class LMKTModel(torch.nn.Module):
                 # The first pref_n exercises are for training; each exercise contributes one label 
                 # so we skip the first pref_n labels
 
-                eval_label_idxs = all_label_pos[pref_n:] 
+                eval_label_idxs = all_label_pos[pref_n:]
+                eval_prompts = [p for p, _ in hist[pref_n:]]
+                eval_toktext = eval_ex_texts[uid]
+
+                assert len(eval_label_idxs) == len(eval_prompts)
+                assert len(eval_prompts) == len(eval_toktext)
                                 
                 # SCORE USING PREVIOUS 1024 tokens
 
-                for pos in eval_label_idxs:
+                for pos, prompt_text, toktext in zip(eval_label_idxs, eval_prompts, eval_toktext):
                     assert pos > 0
+
+                    is_seen = toktext in train_ex_texts
 
                     start = max(0, pos-1024) 
                     window_ids = ids[:, start:pos]
@@ -137,6 +160,9 @@ class LMKTModel(torch.nn.Module):
                     all_preds_y.append(last_tok_sm[y_id].item())
                     all_preds_n.append(last_tok_sm[n_id].item())
 
+                    all_seen_mask.append(is_seen)
+                    all_prompt_texts.append(prompt_text)
+                    all_ex_texts.append(toktext)
 
             #===== METRIC CALCULATION =====
             
@@ -144,18 +170,38 @@ class LMKTModel(torch.nn.Module):
             auc = roc_auc_score(all_labels, all_preds_y)
             preds = (torch.tensor(all_preds_y) >= 0.5).long()
 
-            # USE P(Y) > P(N)
+            # USE P(Y) > P(N) to predict Y
             preds = (torch.tensor(all_preds_y) > torch.tensor(all_preds_n)).long()
             accuracy = accuracy_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
             f1 = f1_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
+
+            # labels and preds for seen vs unseen analysis
+            seen_labels, unseen_labels = [], []
+            seen_preds_y, unseen_preds_y = [], []
+            for l, p, seen in zip(all_labels, all_preds_y, all_seen_mask):
+                if seen:
+                    seen_labels.append(l)
+                    seen_preds_y.append(p)
+                else:
+                    unseen_labels.append(l)
+                    unseen_preds_y.append(p)
+            
+            if len(set(seen_labels)) <= 1:
+                logger.warning("Only one class present in seen_labels; cannot compute AUC here")
+            if len(set(unseen_labels)) <= 1:
+                logger.warning("Only one class present in unseen_labels; cannot compute AUC here")
 
             return {
                 "auc": auc,
                 "accuracy": accuracy,
                 "f1": f1,
+                "auc_seen": roc_auc_score(seen_labels, seen_preds_y) if len(set(seen_labels)) > 1 else None,
+                "auc_unseen": roc_auc_score(unseen_labels, unseen_preds_y) if len(set(unseen_labels)) > 1 else None,
+                "n_seen": len(seen_labels),
+                "n_unseen": len(unseen_labels)
             }
 
-# ===== QUESTION GENERATION FUNCTIONS for lmkt
+# ===== QUESTION GENERATION FUNCTIONS for LMKT
 
     def p_y_given_question_batch(self, history_prefixes: List[str], question_texts: List[str]) -> torch.Tensor:
         self.eval()
