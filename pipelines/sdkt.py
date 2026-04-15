@@ -110,12 +110,15 @@ def run_sdkt_pipeline(
         stored_ep = ckpt.get("epoch")
         if stored_ep is not None:       
             start_epoch = stored_ep + 1 
+
+        # restore rng state
         rng_state = ckpt.get("rng_state")
         if rng_state is not None:
-            torch.random.set_rng_state(rng_state["torch"])
+            torch.random.set_rng_state(rng_state["torch"].cpu())
             np.random.set_state(rng_state["numpy"])
+
             if rng_state.get("cuda") is not None and torch.cuda.is_available():
-                torch.cuda.set_rng_state_all(rng_state["cuda"])
+                torch.cuda.set_rng_state_all([s.cpu() for s in rng_state["cuda"]])
         
         # extra scheuduler info stored
         global_step = ckpt.get("extra", {}).get("final_global_step", 0)

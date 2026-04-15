@@ -20,3 +20,5 @@ tabulate
 psutil
 sacrebleu
 fasttext
+
+nltk
