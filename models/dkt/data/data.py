@@ -78,10 +78,11 @@ def embed_sentence_matrix(sentence_list: List[str], model_name: str = "distilber
     return np.vstack(all_embs) # (num_sentences, embedding_dim)
 
 class DKTSeqDataset(Dataset):
-    def __init__(self, seqs: dict, prefix_lens: dict | None = None):
+    def __init__(self, seqs: dict, prefix_lens: dict | None = None, seen_flags: dict | None = None):
         # Convert dict to list of (uid, (q_ids, correct_list)) 
         self.seqs = list(seqs.items())
         self.prefix_lens = prefix_lens if prefix_lens is not None else {}
+        self.seen_flags = seen_flags if seen_flags is not None else {}
 
     def __len__(self):
         return len(self.seqs)
@@ -90,13 +91,23 @@ class DKTSeqDataset(Dataset):
         uid, (q_ids, correct_list) = self.seqs[idx]
         
         pref_len = self.prefix_lens.get(uid, 0)
-        
-        return uid, torch.from_numpy(q_ids.copy()), torch.from_numpy(correct_list.copy()), pref_len
+        seen = self.seen_flags.get(uid, np.zeros(len(q_ids), dtype=bool))
+
+        if len(seen) != len(q_ids):
+            raise ValueError(f"Seen flags length mismatch. User {uid}: {len(seen)} != {len(q_ids)}")
+
+        return (
+            uid,
+            torch.from_numpy(q_ids.copy()),
+            torch.from_numpy(correct_list.copy()),
+            pref_len,
+            torch.from_numpy(seen.copy()),
+        )
 
 def collate_dkt(batch):
-    # batch: list of (uid, q, a, prefix_len)
+    # batch: list of (uid, q, a, prefix_len, seen_flags)
     
-    uids, q_ids, correct_list, prefix_lens = zip(*batch)
+    uids, q_ids, correct_list, prefix_lens, seen_flags = zip(*batch)
 
     T_max = max(len(q_seq) for q_seq in q_ids)
     B = len(q_ids)
@@ -104,12 +115,14 @@ def collate_dkt(batch):
     q_ids_padded = torch.zeros((B, T_max), dtype=torch.long)
     correct_list_padded = torch.zeros((B, T_max), dtype=torch.long)
     mask = torch.zeros((B, T_max), dtype=torch.bool)
+    seen_padded = torch.zeros((B, T_max), dtype=torch.bool)
     pref_lens_tens = torch.tensor(prefix_lens, dtype=torch.long)
 
-    for i, (q, a) in enumerate(zip(q_ids, correct_list)):
+    for i, (q, a, seen) in enumerate(zip(q_ids, correct_list, seen_flags)):
         T = len(q)
         q_ids_padded[i, :T] = q
         correct_list_padded[i, :T] = a
         mask[i, :T] = 1
+        seen_padded[i, :T] = seen
     
-    return uids, q_ids_padded, correct_list_padded, mask, pref_lens_tens
+    return uids, q_ids_padded, correct_list_padded, mask, pref_lens_tens, seen_padded

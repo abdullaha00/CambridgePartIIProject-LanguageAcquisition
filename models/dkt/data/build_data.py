@@ -47,6 +47,15 @@ def prepend_train_history(train_seqs: dict, eval_seqs: dict) -> dict:
 
     return full_eval_seqs, pref_lens
 
+def prepend_eval_seen(eval_seen: dict[str, np.ndarray], pref_lens: dict[str, int]) -> dict:
+    full_eval_seen = {}
+
+    for uid, seen in eval_seen.items():
+        prefix_seen = np.zeros(pref_lens[uid], dtype=bool)
+        full_eval_seen[uid] = np.concatenate([prefix_seen, seen])
+
+    return full_eval_seen
+
 def build_dkt_dataloaders(
         track: str,
         variant: str,
@@ -100,6 +109,7 @@ def build_dkt_dataloaders(
     eval_seqs = bundle.seqs["eval"]
 
     eval_full_seqs, pref_lens = prepend_train_history(train_seqs, eval_seqs)
+    eval_full_seen = prepend_eval_seen(bundle.eval_seen, pref_lens)
 
     #==== Truncate long sequences to cap memory during training
     if max_seq_len is not None:
@@ -107,7 +117,7 @@ def build_dkt_dataloaders(
 
     #==== Build datasets
     train_ds = DKTSeqDataset(train_seqs, prefix_lens={})
-    test_ds = DKTSeqDataset(eval_full_seqs, prefix_lens=pref_lens)
+    test_ds = DKTSeqDataset(eval_full_seqs, prefix_lens=pref_lens, seen_flags=eval_full_seen)
 
     #==== Build dataloaders
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=collate_dkt)

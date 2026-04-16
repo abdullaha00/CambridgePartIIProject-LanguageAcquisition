@@ -64,11 +64,12 @@ class DKTBase(nn.Module):
         self.train()
 
         total, n = 0.0, 0
-        for uids, Q, A, mask, pref_lens in dl:
+        for uids, Q, A, mask, pref_lens, seen_mask in dl:
 
             Q = Q.to(self.device)
             A = A.to(self.device)
             mask = mask.to(self.device)
+            seen_mask = seen_mask.to(self.device)
            
             opt.zero_grad()
             loss = self.next_loss(Q, A, mask)
@@ -85,19 +86,21 @@ class DKTBase(nn.Module):
 
         all_preds = []
         all_targs = []
+        all_seen = []
 
         with torch.no_grad():
-            for uids, Q, A, mask, pref_lens in dl:
+            for uids, Q, A, mask, pref_lens, seen_mask in dl:
                 Q = Q.to(self.device)
                 A = A.to(self.device)
                 mask = mask.to(self.device)
+                seen_mask = seen_mask.to(self.device)
 
                 Q_in, A_in = Q[:, :-1], A[:, :-1]
 
                 h = self(Q_in, A_in) # (B, T-1, H) for states (s_0, s_1, ..., s_{T-2}) after observing q_i
                 probs = self.predict_next(h, Q[:, 1:])
 
-                targ_mask = mask[:, 1:]
+                targ_mask = mask[:, 1:].clone() # predicting A[:, 1:], so shift by 1
 
                 for i, pref_len in enumerate(pref_lens):
                     assert pref_len > 0, f"Prefix length should be > 0, got {pref_len}"
@@ -105,14 +108,15 @@ class DKTBase(nn.Module):
 
                 all_preds.append(probs[targ_mask])
                 all_targs.append(A[:, 1:][targ_mask])
+                all_seen.append(seen_mask[:, 1:][targ_mask])
 
         all_preds = torch.cat(all_preds)
         all_targs = torch.cat(all_targs)
+        all_seen = torch.cat(all_seen)
 
         if len(torch.unique(all_targs)) < 2:
-            logger.warning("Warning: only one class present in y_true. AUC is not defined in this case.")
-            return float('nan')  # AUC is not defined in this case
-
+            logger.warning("Warning: only one class present: AUC is not defined.")
+            return float('nan')  
         auc = roc_auc_score(all_targs.cpu().numpy(), all_preds.cpu().numpy())
         
         preds = (all_preds >= 0.5).long()
@@ -123,4 +127,8 @@ class DKTBase(nn.Module):
             "auc": auc,
             "accuracy": accuracy,
             "f1": f1,
+            "auc_seen": roc_auc_score(all_targs[all_seen].cpu().numpy(), all_preds[all_seen].cpu().numpy()),
+            "auc_unseen": roc_auc_score(all_targs[~all_seen].cpu().numpy(), all_preds[~all_seen].cpu().numpy()),
+            "n_seen": int(all_seen.sum().item()),
+            "n_unseen": int((~all_seen).sum().item()),
         }

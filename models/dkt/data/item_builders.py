@@ -5,29 +5,39 @@ from dataclasses import dataclass
 
 from models.modular_qg.common.data import collapse_to_exercise
 
+UNK_ITEM = "<UNK>"
+
 @dataclass(frozen=True)
 class SeqBundle:
     seqs: Dict[str, Tuple[np.ndarray, np.ndarray]]
     item_map: Dict[str, int]
-    item_level: str 
+    item_level: str
+    eval_seen: Dict[str, np.ndarray]
 
 def build_item_map(train_items: pd.Series) -> Dict[str, int]:
-    unique_items = train_items.unique()
+    unique_items = train_items.unique().tolist()
+    unique_items.append(UNK_ITEM)
     item_map = {item: i for i, item in enumerate(unique_items)}
     return item_map
 
 def apply_item_map(df: pd.DataFrame, item_col: str, item_map: dict, drop_unk: bool) -> pd.DataFrame:
+    
+    # === Seen/Unseen based on training data items
+    assert UNK_ITEM in item_map, f"Item map must contain UNK_ITEM key: {UNK_ITEM}"
+    seen_items = set(item_map.keys()) - {UNK_ITEM}
+    df["is_seen"] = df[item_col].isin(seen_items)
     df["item_id"] = df[item_col].map(item_map)
     
     if drop_unk:
         df = df.dropna(subset=["item_id"])
     else:
-        unk_item_id = len(item_map)
+        unk_item_id = item_map[UNK_ITEM]
         df["item_id"] = df["item_id"].fillna(unk_item_id)
 
     return df
 
-def group_user_seqs(df: pd.DataFrame, item_col: str, outcome_col: str) -> dict:
+def group_user_seqs(df: pd.DataFrame, item_col: str, outcome_col: str) -> dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Groups dataframe by user and returns dict of user_id -> (item_id_seq, outcome_seq)"""
     seqs = {} 
     
     for uid, df_user in df.groupby("user_id", sort=False):
@@ -36,6 +46,15 @@ def group_user_seqs(df: pd.DataFrame, item_col: str, outcome_col: str) -> dict:
         seqs[uid] = (item_ids, correct_list)
 
     return seqs
+
+def group_user_vals(df: pd.DataFrame, value_col: str) -> dict[str, np.ndarray]:
+    """Groups dataframe by user and returns dict of user_id -> value_seq for given column"""
+    values = {}
+
+    for uid, df_user in df.groupby("user_id", sort=False):
+        values[uid] = df_user[value_col].to_numpy()
+
+    return values
 
 def build_tok_sequences(
     df_train: pd.DataFrame,
@@ -51,11 +70,13 @@ def build_tok_sequences(
 
     train_seqs = group_user_seqs(df_train, "item_id", "label")
     eval_seqs = group_user_seqs(df_eval, "item_id", "label")
+    eval_seen = group_user_vals(df_eval, "is_seen")
 
     return SeqBundle(
         seqs={"train": train_seqs, "eval": eval_seqs},
         item_map=item_map,
-        item_level="token"
+        item_level="token",
+        eval_seen=eval_seen,
     )
 
 def build_ex_sequences(
@@ -90,11 +111,12 @@ def build_ex_sequences(
 
     train_seqs = group_user_seqs(df_train_ex, "item_id", "correct")
     eval_seqs = group_user_seqs(df_eval_ex, "item_id", "correct")
+    eval_seen = group_user_vals(df_eval_ex, "is_seen")
 
     return SeqBundle(
         seqs={"train": train_seqs, "eval": eval_seqs},
         item_map=item_map,
-        item_level="exercise"
+        item_level="exercise",
+        eval_seen=eval_seen,
     )
-
 

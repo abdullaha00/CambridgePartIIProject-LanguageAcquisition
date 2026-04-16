@@ -85,8 +85,16 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
 
         if epoch == epochs or epoch % eval_every == 0:
             metrics = model.evaluate_metrics(dkt_data.eval_dataset)
-            logger.info("Test Metrics | AUC=%.5f | Accuracy=%.5f | F1=%.5f",
-                        metrics["auc"], metrics["accuracy"], metrics["f1"])
+            logger.info(
+                "Test Metrics | AUC=%s | AUC (seen)=%s | AUC (unseen)=%s | Accuracy=%.5f | F1=%.5f | n_seen=%d | n_unseen=%d",
+                metrics["auc"],
+                metrics["auc_seen"],
+                metrics["auc_unseen"],
+                metrics["accuracy"],
+                metrics["f1"],
+                metrics["n_seen"],
+                metrics["n_unseen"],
+            )
 
             record = MetricRecord(
                 model=model_name,
@@ -97,6 +105,8 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
                 auc=metrics.get("auc"),
                 acc=metrics.get("accuracy"),
                 f1=metrics.get("f1"),
+                auc_seen=metrics.get("auc_seen"),
+                auc_unseen=metrics.get("auc_unseen"),
                 epochs=epoch,
                 tag=tag
             )
