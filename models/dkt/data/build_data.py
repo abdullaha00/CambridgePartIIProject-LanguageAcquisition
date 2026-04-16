@@ -48,14 +48,15 @@ def prepend_train_history(train_seqs: dict, eval_seqs: dict) -> dict:
     return full_eval_seqs, pref_lens
 
 def build_dkt_dataloaders(
-    track: str,
-    variant: str,
-    subset: int | None,
-    item_level: str,
-    train_with_dev: bool,
-    batch_size: int = 64,
-    shuffle_train: bool = True,
-    max_seq_len: int = None,
+        track: str,
+        variant: str,
+        subset: int | None,
+        item_level: str,
+        train_with_dev: bool,
+        batch_size: int = 32,
+        shuffle_train: bool = True,
+        max_seq_len: int = None,
+        use_prompts: bool = False
     ) -> DKTDataBundle:
 
     #======= LOAD DATA (needed cols)
@@ -66,7 +67,7 @@ def build_dkt_dataloaders(
     if item_level == ITEM_TOK:
         DF_COLS = ["user_id", "lemma", "label"]
     elif item_level == ITEM_EX:
-        DF_COLS = ["user_id", "ex_inst_idx", "tok", "label"]
+        DF_COLS = ["user_id", "tok_id", "tok", "label", "format"]
     else:
         raise ValueError(f"Invalid item_level {item_level}")
     
@@ -77,9 +78,23 @@ def build_dkt_dataloaders(
     #======= Get correct seq bundle
 
     if item_level == ITEM_TOK:
-        bundle: SeqBundle = build_tok_sequences(df_train, df_eval, item_col="lemma", drop_unk=True)
+        bundle: SeqBundle = build_tok_sequences(df_train, df_eval, item_col="lemma", drop_unk=False)
     elif item_level == ITEM_EX:
-        bundle: SeqBundle = build_ex_sequences(df_train, df_eval, item_col="prompt", drop_unk=True)
+        
+        dft_prompts, dfe_prompts = None, None
+        if use_prompts:
+            # We restrict to reverse_translate tasks, since those have prompts only
+            logger.info("Restricting to reverse_translate format for exercise-level DKT to use prompts")
+            df_train = df_train[df_train["format"] == "reverse_translate"]
+            df_eval = df_eval[df_eval["format"] == "reverse_translate"]
+
+            
+            dft_prompts, dfe_prompts = load_train_and_eval_df(
+                track, "prompt", train_with_dev, subset=subset
+            )
+
+        item_col = "prompt" if use_prompts else "tok_text"
+        bundle: SeqBundle = build_ex_sequences(df_train, df_eval, item_col=item_col, dft_prompts=dft_prompts, dfe_prompts=dfe_prompts, drop_unk=False)
     
     train_seqs = bundle.seqs["train"]
     eval_seqs = bundle.seqs["eval"]

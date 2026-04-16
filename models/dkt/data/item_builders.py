@@ -40,8 +40,8 @@ def group_user_seqs(df: pd.DataFrame, item_col: str, outcome_col: str) -> dict:
 def build_tok_sequences(
     df_train: pd.DataFrame,
     df_eval: pd.DataFrame,
-    item_col: str = "lemma",
-    drop_unk: bool = True
+    item_col: str,
+    drop_unk: bool,
 ) -> SeqBundle:
     
     item_map = build_item_map(df_train[item_col])
@@ -61,13 +61,28 @@ def build_tok_sequences(
 def build_ex_sequences(
     df_train: pd.DataFrame,
     df_eval: pd.DataFrame,
-    item_col: str = "prompt",
-    drop_unk: bool = True
+    item_col: str,
+    dft_prompts: pd.DataFrame = None,
+    dfe_prompts: pd.DataFrame = None,
+    drop_unk: bool = False
 ) -> SeqBundle:
     
     df_train_ex = collapse_to_exercise(df_train)
     df_eval_ex = collapse_to_exercise(df_eval)
 
+    if item_col == "prompt":
+        if dft_prompts is None or dfe_prompts is None:
+            raise ValueError("Prompt dataframes must be provided when item_col is 'prompt'")
+        
+        # === MERGE with prompts
+        df_train_ex = df_train_ex.merge(dft_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+        df_eval_ex = df_eval_ex.merge(dfe_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+        
+        missing_train = df_train_ex["prompt"].isna().sum()
+        assert missing_train == 0, f"Missing prompts in training data after merge: {missing_train}"
+        missing_eval = df_eval_ex["prompt"].isna().sum()
+        assert missing_eval == 0, f"Missing prompts in eval data: {missing_eval}"
+    
     item_map = build_item_map(df_train_ex[item_col])
     
     df_train_ex = apply_item_map(df_train_ex, item_col, item_map, drop_unk=drop_unk)

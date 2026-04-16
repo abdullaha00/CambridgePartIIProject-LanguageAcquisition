@@ -14,7 +14,7 @@ def collapse_to_exercise(df: pd.DataFrame) -> pd.DataFrame:
     
     # CHECK IF LABELS ARE AVAILABLE
     if df["label"].isna().any():
-        raise ValueError("Some labels are missing; cannot collapse to exercise level.")
+        raise ValueError("Some labels are missing.")
 
     if "ex_key" not in df.columns:
         ex_key = df["tok_id"].str.slice(0, 10)

@@ -36,6 +36,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
         batch_size=32,
         shuffle_train=True
     )
+    
     #==== Build model
 
     if model_name == "dkt":
