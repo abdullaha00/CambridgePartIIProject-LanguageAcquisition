@@ -1,12 +1,10 @@
-from typing import Tuple, override
+from typing import Tuple
 
 from torch import nn
 import torch
 import torch.nn.functional as F
 import numpy as np
 from models.SDKT.SDKT import SDKTModel
-from models.utils import compute_metrics
-
 class VDKTModel(SDKTModel):
     def __init__(self, 
         num_toks, 
@@ -67,6 +65,7 @@ class VDKTModel(SDKTModel):
         enc_h: torch.Tensor, # (num_layers, B, hid_dim)
         enc_c: torch.Tensor, # (num_layers, B, hid_dim)
         enc_mask: torch.Tensor, # (B, T_enc)
+        last_enc_q: torch.Tensor, # (B,)
         last_enc_a: torch.Tensor, # (B,)
         teacher_forcing: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -76,7 +75,8 @@ class VDKTModel(SDKTModel):
         t_emb = self.t_emb(dec_q) # (B, T_dec, emb_dim)
         m_emb = self.embed_meta(dec_m) # (B, T_dec, total_meta_emb_dim)
     
-        prev_a = last_enc_a # (B,) 
+        prev_q = last_enc_q # (B,)
+        prev_a = last_enc_a # (B,)
 
         preds = []
         kls = []
@@ -84,10 +84,9 @@ class VDKTModel(SDKTModel):
         h, c = enc_h, enc_c
          
         for t in range(T_dec):
+            prev_q_emb = self.t_emb(prev_q) # (B, emb_dim)
             prev_a_emb = self.a_emb(prev_a) # (B, emb_dim)
-
-            # x_t = [q_emb, m_emb, prev_a_emb]
-            x_t = torch.cat([t_emb[:, t, :], m_emb[:, t, :], prev_a_emb], dim=-1) # (B, dec_input_dim)
+            x_t = torch.cat([prev_q_emb, prev_a_emb], dim=-1) # (B, dec_input_dim)
 
             # step with sequence length = 1
             out, (h,c) = self.decoder_lstm(x_t.unsqueeze(1), (h, c)) # out: (B, 1, hid_dim)
@@ -111,10 +110,8 @@ class VDKTModel(SDKTModel):
                 KL_t = self.KL_PQ(post_mu, post_logvar, prior_mu, prior_logvar) # (B, 1)
             
             else:
-                
                 z_t = self.reparam(prior_mu, prior_logvar) # (B, latent_dim)
                 KL_t = torch.zeros(B, 1, device=o_t.device) # No KL
-
 
             pred_input = torch.cat([z_t, o_t], dim=-1) # (B, latent_dim + pred_input_dim)
             logit_t = self.vpred_layer(pred_input)
@@ -123,6 +120,7 @@ class VDKTModel(SDKTModel):
             preds.append(p_t)
             kls.append(KL_t.squeeze(-1)) # [(B,)]
             
+            prev_q = dec_q[:, t]
             if teacher_forcing:
                 prev_a = dec_a[:, t] # (B,)
             else:
@@ -146,6 +144,7 @@ class VDKTModel(SDKTModel):
             enc_h=enc_h,
             enc_c=enc_c,
             enc_mask=batch_data["enc_mask"],
+            last_enc_q=batch_data["enc_last_q"],
             last_enc_a=batch_data["enc_last_a"],
             teacher_forcing=teacher_forcing
         )
