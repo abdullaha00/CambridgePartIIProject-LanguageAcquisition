@@ -4,18 +4,21 @@ import sys
 import torch
 import numpy as np
 from db.log_db import GenerationRecord, MetricRecord, log_run_g, log_run_m
-from pipelines.aqg_qg import run_aqg_qg_pipeline
-from pipelines.dkt import run_dkt_pipeline, parse_dkt_args
-from pipelines.gbdt import run_gbdt_pipeline, parse_gdbt_args
 from time import perf_counter
-from pipelines.lmkt import parse_lmkt_args, run_lmkt_pipeline
-from pipelines.lr import run_lr_pipeline
-from pipelines.aqg_kt import run_aqg_dkt_pipeline
 import logging
 from rich.logging import RichHandler
 from pipelines.qg import parse_qg_args, run_qg_pipeline
 import warnings
 
+# === PIPELINE IMPORTS
+from pipelines.gbdt import run_gbdt_pipeline
+from pipelines.lmkt import run_lmkt_pipeline
+from pipelines.sdkt import run_sdkt_pipeline
+from pipelines.qg import run_qg_pipeline
+from pipelines.lr import run_lr_pipeline
+from pipelines.dkt import run_dkt_pipeline
+from pipelines.aqg_kt import run_aqg_dkt_pipeline
+from pipelines.aqg_qg import run_aqg_qg_pipeline
 from pipelines.sdkt import run_sdkt_pipeline
 
 warnings.filterwarnings("ignore", message=".*loss_type.*")
@@ -38,7 +41,7 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert_dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt", "aqg_qg"],
+               choices=["lr", "gbdt", "dkt", "bert-dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt", "aqg_qg"],
                help="Which model to run")
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
 p.add_argument("-d", "--train-with-dev", action="store_true", default=False)

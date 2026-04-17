@@ -2,12 +2,13 @@ from numpy import record
 from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
 import logging
 import argparse
+import numpy as np
 import torch
 from tqdm import tqdm
 
 from db.log_db import MetricRecord
 from models.modular_qg.lmkt.lmkt import LMKTModel
-from pipelines.common.checkpointing import save_torch
+from pipelines.common.checkpointing import load_torch_ckpt, save_torch
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ def parse_lmkt_args(dkt_args=None):
     args = p.parse_args(dkt_args)
     return args
 
-def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None, next_args=None, tag=None) -> list[MetricRecord]:
+def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None, next_args=None, resume_from=None, tag=None) -> list[MetricRecord]:
 
     if save_every is None:
         save_every = eval_every
@@ -30,6 +31,30 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
 
     model = LMKTModel()
     opt = torch.optim.AdamW(model.parameters(), lr=5e-5)
+    start_epoch = 1
+
+    # === LOAD FROM CHECKPOINT (if resuming)
+    if resume_from is not None:
+        logger.info(f"Resuming from checkpoint: {resume_from}")
+        ckpt = load_torch_ckpt(resume_from)
+
+        # ensure model aligns with checkpoint
+        model.load_state_dict(ckpt["model_state_dict"])
+        if ckpt.get("optimizer_state_dict") is not None:
+            opt.load_state_dict(ckpt["optimizer_state_dict"])
+        stored_ep = ckpt.get("epoch")
+        if stored_ep is not None:       
+            start_epoch = stored_ep + 1 
+
+        # restore rng state
+        rng_state = ckpt.get("rng_state")
+        if rng_state is not None:
+            torch.random.set_rng_state(rng_state["torch"].cpu())
+            np.random.set_state(rng_state["numpy"])
+
+            if rng_state.get("cuda") is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all([s.cpu() for s in rng_state["cuda"]])
+
 
     #==== BUILD DATALOADER
     lmkt_data = build_lmkt_dataloaders(
@@ -45,7 +70,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
     # ==== Train
     records = []
     
-    for epoch in tqdm(range(1, EPOCHS + 1), desc="LMKT Training Epochs"):
+    for epoch in tqdm(range(start_epoch, EPOCHS + 1), desc="LMKT Training Epochs"):
         loss = model.train_one_epoch(lmkt_data.train_dataloader, opt)
         logger.info(f"Epoch {epoch} loss: {loss}")
 
@@ -72,6 +97,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
                 auc_seen=metrics.get("auc_seen"),
                 auc_unseen=metrics.get("auc_unseen"),
                 epochs=epoch,
+                tag=tag,
             )
             records.append(rec)
 
