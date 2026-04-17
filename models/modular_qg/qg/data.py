@@ -70,7 +70,7 @@ class QGDataset:
             prefix_texts = []
             
             for q_text in sampled_qs:
-                full_prompt = f"{pref_text} {TOK_Q} {q_text} {TOK_A}"
+                full_prompt = f"{pref_text}{TOK_Q}{q_text}{TOK_A}"
                 full_prompt = resize_prompt(full_prompt)
 
                 last_q = full_prompt.rfind(TOK_Q)

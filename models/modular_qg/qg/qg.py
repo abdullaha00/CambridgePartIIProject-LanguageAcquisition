@@ -139,7 +139,7 @@ class LMKTQG(nn.Module):
         self.eval()
         tok = self.tokenizer
 
-        prompt = resize_prompt(f"{history_prefix} {TOK_G}" , length=800)
+        prompt = resize_prompt(f"{history_prefix}{TOK_G}" , length=800)
         prompt_enc = tok.encode(prompt, add_special_tokens=False, truncation=False) # (T,)
 
         max_prompt_toks = self.model.config.max_position_embeddings - 1 - max_new_toks # leave room for generated tokens and diff emb

@@ -225,9 +225,9 @@ class LMKTModel(torch.nn.Module):
                 logger.warning(f"Empty question_text passed to p_y_given_question")
             
             if hp and hp.strip():
-                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A} ")
+                prompts.append(f"{hp}{TOK_Q}{qt}{TOK_A}")
             else:
-                prompts.append(f"{TOK_Q} {qt} {TOK_A} ")
+                prompts.append(f"{TOK_Q}{qt}{TOK_A}")
         
         
         enc_out = tok(
@@ -279,7 +279,7 @@ class LMKTModel(torch.nn.Module):
 
         cands=[]
 
-        prompt = f"{history_prefix} {TOK_Q}"
+        prompt = f"{history_prefix}{TOK_Q}"
         enc_prompt_ids = tok.encode(prompt, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
 
         gen = self.model.generate(
