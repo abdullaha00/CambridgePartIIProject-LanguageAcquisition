@@ -6,7 +6,7 @@ from models.SDKT.data import SDKTEvalDataset, SDKTTrainDataset, SDKTVocabs, buil
 from torch.utils.data import DataLoader
 logger = logging.getLogger(__name__)
 
-META_COLS = ["user_id", "type", "pos", "format", "session", "client"]
+META_COLS = ["user_id", "countries", "deprel", "pos", "meta", "format", "session", "client"]
 
 @dataclass(frozen=True)
 class SDKTDataBundle:
