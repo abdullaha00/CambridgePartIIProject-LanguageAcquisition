@@ -25,9 +25,8 @@ class SDKTModel(nn.Module):
         self.meta_emb_keys: dict[str, str] = {}
 
         for name, size in meta_vocab_sizes.items():
-            module_key = "meta_type" if name == "type" else name
-            self.meta_emb_keys[name] = module_key
-            self.meta_embs[module_key] = nn.Embedding(size+2, meta_emb_dim, padding_idx=0) # +2 for UNK and padding
+            assert name not in self.meta_emb_keys, f"Already existing: {name}"
+            self.meta_embs[name] = nn.Embedding(size+2, meta_emb_dim, padding_idx=0) # +2 for UNK and padding
         
         total_meta = len(meta_vocab_sizes)
 
@@ -52,9 +51,9 @@ class SDKTModel(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0
         )
 
-        # We have H after final output latyer
+        # We have H after final output layer
 
-        # The paper's auto-regressive decoder updates state from the previous question and answer.
+        # Use previous question + answer
         dec_input_dim = emb_dim + emb_dim  # [q_{t-1}, a_{t-1}]
         self.decoder_lstm = nn.LSTM(
             input_size=dec_input_dim,
@@ -78,8 +77,8 @@ class SDKTModel(nn.Module):
         # meta_dict is a dict of {feat_name: tensor} where tensor is (B, T)
         # returns a tensor of shape (B, T, total_meta_emb_dim)
         meta_embs = []
-        for name, module_key in self.meta_emb_keys.items():
-            meta_embs.append(self.meta_embs[module_key](meta_dict[name]))
+        for name, emb in self.meta_embs.items():
+            meta_embs.append(self.meta_embs[name](meta_dict[name]))
         
         assert len(meta_embs) > 0, "No meta features provided"
         return torch.cat(meta_embs, dim=-1)
