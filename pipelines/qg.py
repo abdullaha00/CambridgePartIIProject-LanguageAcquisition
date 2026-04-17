@@ -2,7 +2,7 @@ from functools import partial
 
 
 from data_processing.data_parquet import load_train_and_eval_df
-from db.log_db import MetricRecord
+from db.log_db import GenerationRecord
 from models.modular_qg.common.data import collapse_to_exercise, build_user_sequences_text, history_text
 from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
 import logging
@@ -208,7 +208,23 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=No
                 qg_metrics.get("novelty", 0),
                 qg_metrics.get("n_generated_questions", 0))
     
-    #TODO: augment DB to accept QG metrics
-    return []
+    rec = GenerationRecord(
+        model="qg",
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=train_with_dev,
+        d_mae=qg_metrics.get("d_mae"),
+        d_rmse=qg_metrics.get("d_rmse"),
+        d_pearson_corr=qg_metrics.get("d_pearson_corr"),
+        distinct_1=qg_metrics.get("distinct_1"),
+        distinct_2=qg_metrics.get("distinct_2"),
+        unique_q_ratio=qg_metrics.get("unique_q_ratio"),
+        novelty=qg_metrics.get("novelty"),
+        perplexity=qg_metrics.get("perplexity"),
+        n_generated_questions=qg_metrics.get("n_generated_questions"),
+        epochs=EPOCHS,
+        tag=tag,
+    )
+    return [rec]
 
     

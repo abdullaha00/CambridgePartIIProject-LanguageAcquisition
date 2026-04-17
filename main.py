@@ -95,7 +95,7 @@ elif MODEL == "gbdt":
         tag=args.tag,
     )
 
-elif MODEL == "dkt" or MODEL == "bert_dkt":
+elif MODEL == "dkt" or MODEL == "bert-dkt":
     records = run_dkt_pipeline(
         model_name=MODEL,
         TRACK=TRACK,

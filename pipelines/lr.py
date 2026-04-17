@@ -1,12 +1,13 @@
-from data_processing.data_parquet import load_train_and_eval_df, load_train_and_eval_df_strict
+from data_processing.data_parquet import load_train_and_eval_df_strict
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 import logging
+from db.log_db import MetricRecord
 
 logger = logging.getLogger(__name__)
 
-def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
+def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
 
     #=== LOAD DATA
     df_train, df_test, test_labels = load_train_and_eval_df_strict(TRACK, "reprocessed", train_with_dev, subset=SUBSET)
@@ -36,8 +37,14 @@ def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False):
     logger.info(f"auc: {auc}")
 
     #=== RETURN LOG METRICS
-
-    return {
-        "auc": auc,
-        "accuracy": score,
-    }
+    rec = MetricRecord(
+        model="lr",
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=train_with_dev,
+        auc=auc,
+        acc=score,
+        f1=float("nan"),
+        tag=tag,
+    )
+    return [rec]

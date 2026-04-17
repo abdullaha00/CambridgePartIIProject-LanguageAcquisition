@@ -91,7 +91,8 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             subset=SUBSET,
             train_with_dev=train_with_dev,
             metrics=metrics,
-            variant=LESION
+            variant=LESION,
+            tag=tag,
             )]
     
         #== SAVING
@@ -148,6 +149,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
                     train_with_dev=train_with_dev,
                     metrics=tr_mets,
                     variant=LESION,
+                    tag=tag,
                 )
             )
             out_records.append(mk_record(
@@ -157,6 +159,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
                 train_with_dev=train_with_dev,
                 metrics=comb_mets,
                 variant=LESION,
+                tag=tag,
             ))
 
         if per_track_metrics.get(ALL_TRACK) is not None:
@@ -168,6 +171,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
                 train_with_dev=train_with_dev,
                 variant=LESION,
                 metrics=all_mets,
+                tag=tag,
             ))
 
         #== SAVING
