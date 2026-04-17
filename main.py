@@ -116,6 +116,7 @@ elif MODEL == "lmkt":
         EPOCHS=EPOCHS,
         eval_every=EVAL_EVERY,
         save_every=args.save_every,
+        resume_from=args.resume,
         tag=args.tag,
     )
 

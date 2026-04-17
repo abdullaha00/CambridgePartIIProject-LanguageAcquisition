@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -81,21 +82,27 @@ class DKTBase(nn.Module):
         
         return total / n
             
-    def evaluate_metrics(self, dl: DataLoader) -> float:
+    def evaluate_metrics(self, dl: DataLoader, return_detailed: bool = False) -> float:
         self.eval()
 
         all_preds = []
         all_targs = []
         all_seen = []
 
+        det_uids = [] # i -> uid
+        det_target_pos = [] # i -> target position in sequence
+
         with torch.no_grad():
             for uids, Q, A, mask, pref_lens, seen_mask in dl:
-                Q = Q.to(self.device)
-                A = A.to(self.device)
+                Q = Q.to(self.device) # (B, T)
+                A = A.to(self.device) # (B, T)
+
                 mask = mask.to(self.device)
                 seen_mask = seen_mask.to(self.device)
 
-                Q_in, A_in = Q[:, :-1], A[:, :-1]
+                B, T = Q.size()
+
+                Q_in, A_in = Q[:, :-1], A[:, :-1] # [q_0, q_1, ..., q_{T-2}], [a_0, a_1, ..., a_{T-2}]
 
                 h = self(Q_in, A_in) # (B, T-1, H) for states (s_0, s_1, ..., s_{T-2}) after observing q_i
                 probs = self.predict_next(h, Q[:, 1:])
@@ -110,20 +117,30 @@ class DKTBase(nn.Module):
                 all_targs.append(A[:, 1:][targ_mask])
                 all_seen.append(seen_mask[:, 1:][targ_mask])
 
+                if return_detailed:
+                    target_pos = torch.arange(1, T, device=self.device).unsqueeze(0).expand(B, T-1) # (B, T-1), [1, 2, ..., T-1] for each B
+                    det_target_pos.append(target_pos[targ_mask].cpu())
+
+                    for uid, row_mask in zip(uids, targ_mask.cpu()):
+                        n = int(row_mask.sum().item()) # targ pos number
+                        assert n > 0, f"Number of target positions is 0 for {uid}, got {n}"
+                        det_uids.extend([uid] * n)
+
         all_preds = torch.cat(all_preds)
         all_targs = torch.cat(all_targs)
         all_seen = torch.cat(all_seen)
 
         if len(torch.unique(all_targs)) < 2:
             logger.warning("Warning: only one class present: AUC is not defined.")
-            return float('nan')  
-        auc = roc_auc_score(all_targs.cpu().numpy(), all_preds.cpu().numpy())
+            auc = float("nan")
+        else:   
+            auc = roc_auc_score(all_targs.cpu().numpy(), all_preds.cpu().numpy())
         
         preds = (all_preds >= 0.5).long()
         accuracy = accuracy_score(all_targs.cpu().numpy(), preds.cpu().numpy())
         f1 = f1_score(all_targs.cpu().numpy(), preds.cpu().numpy())
 
-        return {
+        metrics = {
             "auc": auc,
             "accuracy": accuracy,
             "f1": f1,
@@ -132,3 +149,12 @@ class DKTBase(nn.Module):
             "n_seen": int(all_seen.sum().item()),
             "n_unseen": int((~all_seen).sum().item()),
         }
+
+        if return_detailed:
+            metrics["preds"] = all_preds.cpu().numpy()
+            metrics["targets"] = all_targs.cpu().numpy()
+            metrics["seen"] = all_seen.cpu().numpy()
+            metrics["uid"] = np.asarray(det_uids, dtype=object)
+            metrics["target_pos"] = torch.cat(det_target_pos).numpy()
+
+        return metrics

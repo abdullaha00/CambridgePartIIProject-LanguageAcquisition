@@ -8,6 +8,7 @@ import torch
 from models.dkt.DKT import DKT
 from models.dkt.data.data import embed_sentence_matrix
 from pipelines.common.checkpointing import save_torch, load_torch_ckpt
+from pipelines.common.evaluation import save_binary_eval_predictions
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,12 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
             start_epoch = stored_ep + 1
         rng_state = ckpt.get("rng_state")
         if rng_state is not None:
-            torch.random.set_rng_state(rng_state["torch"])
+            torch.random.set_rng_state(rng_state["torch"].cpu())
             np.random.set_state(rng_state["numpy"])
-            if rng_state.get("cuda") is not None and torch.cuda.is_available():
-                torch.cuda.set_rng_state_all(rng_state["cuda"])
 
-        logger.info(f"Resumed from epoch {start_epoch - 1}, continuing from epoch {start_epoch}")
+            if rng_state.get("cuda") is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all([s.cpu() for s in rng_state["cuda"]])
+        
 
     # ==== Train
 
@@ -84,7 +85,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
         #==== Evaluate
 
         if epoch == epochs or epoch % eval_every == 0:
-            metrics = model.evaluate_metrics(dkt_data.eval_dataset)
+            metrics = model.evaluate_metrics(dkt_data.eval_dataset, return_detailed=True)
             logger.info(
                 "Test Metrics | AUC=%s | AUC (seen)=%s | AUC (unseen)=%s | Accuracy=%.5f | F1=%.5f | n_seen=%d | n_unseen=%d",
                 metrics["auc"],
@@ -111,6 +112,18 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
                 tag=tag
             )
             records.append(record)
+
+            pred_path = save_binary_eval_predictions(
+                record,
+                y_true=metrics["targets"],
+                probs=metrics["preds"],
+                extra_cols={
+                    "seen": metrics["seen"].astype(np.int8),
+                    "uid": metrics["uid"],
+                    "target_pos": metrics["target_pos"],
+                },
+            )
+            logger.info(f"Saved evaluation predictions to {pred_path}")
 
             if save_every and epoch % save_every == 0 or epoch == epochs:
                 ckpt_path = save_torch(model, opt, record)
