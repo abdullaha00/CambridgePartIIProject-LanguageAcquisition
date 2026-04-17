@@ -6,7 +6,7 @@ from pandas.api.types import is_integer_dtype, is_float_dtype
 
 # Columns that should always be stored as category dtype
 STORED_CAT_COLS = {
-    "user_id", "tok", "lemma", "pos", "meta", "type",
+    "user_id", "tok", "lemma", "pos", "meta", "deprel",
     "countries", "client", "session", "format",
     "prev_tok", "next_tok", "rt_tok", "prev_pos", "next_pos", "rt_pos",
     "track", "translation",

@@ -95,6 +95,7 @@ class SDKTTrainDataset(Dataset):
             "dec_q": torch.from_numpy(lemma_seq[k:]), # teacher
             "dec_m": {col: torch.from_numpy(ids[k:]) for col, ids in meta_ids.items()},
             "dec_a": torch.from_numpy(label_seq[k:]),
+            "enc_last_q": torch.tensor(lemma_seq[k-1], dtype=torch.long),
             "enc_last_a": torch.tensor(label_seq[k-1], dtype=torch.long)
         }
     
@@ -121,6 +122,7 @@ class SDKTEvalDataset(Dataset):
             "dec_q": torch.from_numpy(ev_q),
             "dec_a": torch.from_numpy(ev_l),
             "dec_m": {col: torch.from_numpy(ids) for col, ids in ev_m.items()},
+            "enc_last_q": torch.tensor(tr_q[-1], dtype=torch.long),
             "enc_last_a": torch.tensor(tr_l[-1], dtype=torch.long)
         }
     
@@ -147,6 +149,7 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
     dec_m_batch = {col: torch.full((B, Tmax_dec), PAD_ID, dtype=torch.long) for col in m_keys}
     dec_mask_batch = torch.zeros((B, Tmax_dec), dtype=torch.bool)
 
+    enc_last_q_batch = torch.zeros(B, dtype=torch.long)
     enc_last_a_batch = torch.zeros(B, dtype=torch.long)
 
     for i, x in enumerate(batch):
@@ -164,6 +167,7 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         for m in m_keys:
             dec_m_batch[m][i, :T_dec] = x["dec_m"][m]
         
+        enc_last_q_batch[i] = x["enc_last_q"]
         enc_last_a_batch[i] = x["enc_last_a"]
     
     return {
@@ -175,5 +179,6 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         "dec_a": dec_a_batch,
         "dec_m": dec_m_batch,
         "dec_mask": dec_mask_batch,
+        "enc_last_q": enc_last_q_batch,
         "enc_last_a": enc_last_a_batch
     }

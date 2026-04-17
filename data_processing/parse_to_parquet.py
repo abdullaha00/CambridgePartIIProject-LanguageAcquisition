@@ -15,7 +15,7 @@ SCHEMA: dict[str, str] = {
     "tok":            "string",
     "pos":            "string", # dropped in minimal
     "meta":           "string", # dropped in minimal
-    "type":           "string", # dropped in minimal
+    "deprel":         "string", # dropped in minimal
     "rt":             "float64", # dropped in minimal
 
     #user/exercise data
@@ -54,7 +54,7 @@ def parse(path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
             else:
                 r=line.split()
-                tok_id, tok, pos, meta, split, rt = r[0:6]
+                tok_id, tok, pos, meta, dep_edge, rt = r[0:6]
 
                 # map prompt to tok_id[0:10] as that is the execrise identifier
                 if current_prompt is not None:
@@ -73,7 +73,7 @@ def parse(path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     "tok": tok.lower(),
                     "pos": pos,
                     "meta": meta, #need to process more
-                    "type": split,
+                    "deprel": dep_edge,
                     "rt": rt,
                     #Exercise metadata
                     "countries": countries,
@@ -150,7 +150,7 @@ def enforce_schema(df: pd.DataFrame) -> pd.DataFrame:
 
 # ======================
 
-if __name__ == "__main__":
+def parse_and_save_all():
 
     # disable to hide labels at parse time
     use_test_key = True
@@ -175,10 +175,13 @@ if __name__ == "__main__":
             df = enforce_schema(df)
 
             #------ 
-            dfM = df.drop(columns=["pos", "type", "meta", "rt"])
+            dfM = df.drop(columns=["pos", "deprel", "meta", "rt"])
             
             # save both minimal and original to parquet
 
             save_parquet(dfM, track, split, "minimal")
             save_parquet(df, track, split, "original")
             save_parquet(df_prompt, track, split, "prompt")
+
+if __name__ == "__main__":
+    parse_and_save_all()

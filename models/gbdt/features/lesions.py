@@ -41,7 +41,7 @@ EXERCISE = {
     "days",
     "time",
     "countries",
-    "type",
+    "deprel",
 }
 
 MORPH_PREFIX = "morph__"

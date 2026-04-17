@@ -22,9 +22,12 @@ class SDKTModel(nn.Module):
         self.a_emb = nn.Embedding(2, emb_dim)
 
         self.meta_embs = nn.ModuleDict()
+        self.meta_emb_keys: dict[str, str] = {}
 
         for name, size in meta_vocab_sizes.items():
-            self.meta_embs[name] = nn.Embedding(size+2, meta_emb_dim, padding_idx=0) # +2 for UNK and padding
+            module_key = "meta_type" if name == "type" else name
+            self.meta_emb_keys[name] = module_key
+            self.meta_embs[module_key] = nn.Embedding(size+2, meta_emb_dim, padding_idx=0) # +2 for UNK and padding
         
         total_meta = len(meta_vocab_sizes)
 
@@ -51,7 +54,8 @@ class SDKTModel(nn.Module):
 
         # We have H after final output latyer
 
-        dec_input_dim = emb_dim + emb_dim + meta_emb_dim * total_meta  # [t, pred_a, m] tok, ans_prev, meta
+        # The paper's auto-regressive decoder updates state from the previous question and answer.
+        dec_input_dim = emb_dim + emb_dim  # [q_{t-1}, a_{t-1}]
         self.decoder_lstm = nn.LSTM(
             input_size=dec_input_dim,
             hidden_size=hid_dim,
@@ -74,8 +78,8 @@ class SDKTModel(nn.Module):
         # meta_dict is a dict of {feat_name: tensor} where tensor is (B, T)
         # returns a tensor of shape (B, T, total_meta_emb_dim)
         meta_embs = []
-        for name, emb in self.meta_embs.items():
-            meta_embs.append(emb(meta_dict[name]))
+        for name, module_key in self.meta_emb_keys.items():
+            meta_embs.append(self.meta_embs[module_key](meta_dict[name]))
         
         assert len(meta_embs) > 0, "No meta features provided"
         return torch.cat(meta_embs, dim=-1)
@@ -115,6 +119,7 @@ class SDKTModel(nn.Module):
         enc_h: torch.Tensor, # (num_layers, B, hid_dim)
         enc_c: torch.Tensor, # (num_layers, B, hid_dim)
         enc_mask: torch.Tensor, # (B, T_enc)
+        last_enc_q: torch.Tensor, # (B,)
         last_enc_a: torch.Tensor, # (B,)
         teacher_forcing: bool = True
     ) -> torch.Tensor:
@@ -124,15 +129,17 @@ class SDKTModel(nn.Module):
         t_emb = self.t_emb(dec_q) # (B, T_dec, emb_dim)
         m_emb = self.embed_meta(dec_m) # (B, T_dec, total_meta_emb_dim)
     
-        prev_a = last_enc_a # (B,) 
+        prev_q = last_enc_q # (B,)
+        prev_a = last_enc_a # (B,)
 
         preds = []
 
         h, c = enc_h, enc_c
          
         for t in range(T_dec):
+            prev_q_emb = self.t_emb(prev_q) # (B, emb_dim)
             prev_a_emb = self.a_emb(prev_a) # (B, emb_dim)
-            x_t = torch.cat([t_emb[:, t, :], m_emb[:, t, :], prev_a_emb], dim=-1) # (B, dec_input_dim)
+            x_t = torch.cat([prev_q_emb, prev_a_emb], dim=-1) # (B, dec_input_dim)
 
             # step with sequence length = 1
             out, (h,c) = self.decoder_lstm(x_t.unsqueeze(1), (h, c)) # out: (B, 1, hid_dim)
@@ -144,6 +151,7 @@ class SDKTModel(nn.Module):
             
             preds.append(p_t)
 
+            prev_q = dec_q[:, t]
             if teacher_forcing:
                 prev_a = dec_a[:, t] # (B,)
             else:
@@ -170,6 +178,7 @@ class SDKTModel(nn.Module):
             enc_h=enc_state[0],
             enc_c=enc_state[1],
             enc_mask=batch_data["enc_mask"],
+            last_enc_q=batch_data["enc_last_q"],
             last_enc_a=batch_data["enc_last_a"],
             teacher_forcing=teacher_forcing
         )
@@ -210,16 +219,5 @@ class SDKTModel(nn.Module):
         metrics = compute_metrics(p.numpy(), t.numpy())
 
         return metrics
-
-
         
-
-
-
-        
-
-        
-        
-
-
 

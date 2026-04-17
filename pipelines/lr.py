@@ -18,8 +18,8 @@ def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
     # === ENCODE DATA
 
     enc = OneHotEncoder(sparse_output=True, handle_unknown="ignore")
-    encodedData = enc.fit_transform(X_train[['user_id', 'tok', 'pos', 'type']])
-    encoded_test = enc.transform(X_test[['user_id', 'tok', 'pos', 'type']])
+    encodedData = enc.fit_transform(X_train[['user_id', 'tok', 'pos', 'deprel']])
+    encoded_test = enc.transform(X_test[['user_id', 'tok', 'pos', 'deprel']])
 
     # === 
 

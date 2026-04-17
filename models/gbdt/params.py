@@ -50,7 +50,7 @@ CAT_FEATS = {
     "tok", "lemma", "pos",
 
     # dep label
-    "type",
+    "deprel",
 
     # neighbourhood
     "prev_tok", "next_tok", "rt_tok",
