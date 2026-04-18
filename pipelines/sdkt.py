@@ -5,7 +5,6 @@ import logging
 from typing import Optional
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from tqdm import tqdm
 from db.log_db import MetricRecord
 from models.SDKT.build_data import build_sdkt_dataloaders
@@ -13,6 +12,7 @@ from models.SDKT.SDKT import SDKTModel
 from models.SDKT.VDKT import VDKTModel
 from models.SDKT.fasttext import load_fasttext_vecs
 from pipelines.common.checkpointing import save_torch, load_torch_ckpt
+from pipelines.common.evaluation import save_binary_eval_predictions
 logger = logging.getLogger(__name__)
 
 def move_batch_to_device(batch: dict, device: torch.device) -> dict:
@@ -165,8 +165,8 @@ def run_sdkt_pipeline(
 
         logger.info(f"Epoch {epoch} - Train Loss: {avg_loss:.4f}")
 
-        if epoch % eval_every == 0:
-            metrics = model.evaluate(data_bundle.eval_dl)
+        if epoch == EPOCHS or epoch % eval_every == 0:
+            metrics = model.evaluate(data_bundle.eval_dl, return_detailed=True)
             logger.info(f"Epoch {epoch} - Eval Metrics: {metrics}")
             rec = MetricRecord(
                 model=model_name,
