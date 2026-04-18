@@ -20,6 +20,7 @@ class LMKTModel(torch.nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")          
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer.truncation_side = "left"
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
 
         self.model.config.loss_type = "ForCausalLMLoss"
@@ -37,6 +38,10 @@ class LMKTModel(torch.nn.Module):
             self.model.resize_token_embeddings(len(self.tokenizer))
 
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
+
+        model_max = getattr(self.model.config, "max_position_embeddings", 1024)
+        tok_max = self.tokenizer.model_max_length
+        self.max_length = min(model_max, tok_max)
 
         self.to(self.device)
     
@@ -129,14 +134,14 @@ class LMKTModel(torch.nn.Module):
                 assert len(eval_label_idxs) == len(eval_prompts)
                 assert len(eval_prompts) == len(eval_toktext)
                                 
-                # SCORE USING PREVIOUS 1024 tokens
+                # SCORE USING MODEL CONTEXT WINDOW
 
                 for pos, prompt_text, toktext in zip(eval_label_idxs, eval_prompts, eval_toktext):
                     assert pos > 0
 
                     is_seen = toktext in train_ex_texts
 
-                    start = max(0, pos-1024) 
+                    start = max(0, pos-self.max_length) 
                     window_ids = ids[:, start:pos]
 
                     _, logits = self(input_ids=window_ids) # (1, w, V)
@@ -234,7 +239,7 @@ class LMKTModel(torch.nn.Module):
             prompts, 
             add_special_tokens=False, 
             truncation=True, 
-            max_length=1024,
+            max_length=self.max_length,
             padding=True,
             return_tensors="pt").to(self.device)
 
@@ -280,7 +285,13 @@ class LMKTModel(torch.nn.Module):
         cands=[]
 
         prompt = f"{history_prefix}{TOK_Q}"
-        enc_prompt_ids = tok.encode(prompt, add_special_tokens=False, truncation=True, max_length=1024, return_tensors="pt").to(self.device)
+        enc_prompt_ids = tok.encode(
+            prompt,
+            add_special_tokens=False,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
+        ).to(self.device)
 
         gen = self.model.generate(
             input_ids=enc_prompt_ids,
