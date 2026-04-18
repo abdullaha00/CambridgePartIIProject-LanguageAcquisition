@@ -141,6 +141,10 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         df_all_train = pd.concat([tr_dfs[tr][0] for tr in TRACKS], axis=0, ignore_index=True)
         df_all_test = pd.concat([tr_dfs[tr][1] for tr in TRACKS], axis=0, ignore_index=True)
         
+        extra_cols_tr = {} 
+        for track in TRACKS:
+            extra_cols_tr[track] = {col: tr_dfs[track][1][col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS}
+        
         del tr_dfs
         gc.collect()
         
@@ -161,7 +165,6 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             p_tr = ens_model.models_tr[tr].predict_proba(X_test)
             p_all = ens_model.model_all.predict_proba(X_test)
             p_comb = combine_probs(p_tr, p_all)
-            extra_cols = {col: tr_dfs[tr][1][col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS}
 
             tr_mets = per_track_metrics[tr]
             comb_mets = combined_metrics[tr]
@@ -180,7 +183,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             evals_to_write[("gbdt", tr)] = {
                 "y_true": y_test.to_numpy(),
                 "probs": p_tr.to_numpy(),
-                "extra_cols": extra_cols,
+                "extra_cols": extra_cols_tr[tr],
             }
 
             comb_record = mk_record(
@@ -196,7 +199,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             evals_to_write[("gbdt_ens", tr)] = {
                 "y_true": y_test.to_numpy(),
                 "probs": np.asarray(p_comb),
-                "extra_cols": extra_cols,
+                "extra_cols": extra_cols_tr[tr],
             }
 
         if per_track_metrics.get(ALL_TRACK) is not None:
