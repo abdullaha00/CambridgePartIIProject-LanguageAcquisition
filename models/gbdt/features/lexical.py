@@ -1,14 +1,29 @@
+from pathlib import Path
 import pandas as pd
 from wordfreq import zipf_frequency
 from word2word import Word2word
 from rapidfuzz.distance import Levenshtein
 from tqdm.auto import tqdm
+import logging
 
-AOA_PATH = "data/AoA_51715_words.csv"
+logger = logging.getLogger(__name__)
+
+AOA_PATH = Path("data/AoA_51715_words.csv")
+REQUIRE_AOA = True
+
 
 def get_aoa_map(path=AOA_PATH) -> dict:
     
-    aoa_df = pd.read_csv(path, encoding="latin-1")
+    if path.exists():
+        print(f"Loading AoA data from {path}")
+        aoa_df = pd.read_csv(path, encoding="latin-1")
+    else:
+        logger.warning(f"AoA data file not found at {path}. AoA features will be missing.")
+        if REQUIRE_AOA:
+            raise FileNotFoundError(f"AoA data file not found at {path}. Set REQUIRE_AOA=False to proceed or provide file.")
+        else:
+            return {}
+        
     lemma_vals = aoa_df["AoA_Kup_lem"]
 
     aoa_vals = lemma_vals.fillna(aoa_df["AoA_Kup"])

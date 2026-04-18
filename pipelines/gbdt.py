@@ -24,8 +24,15 @@ from models.gbdt.params import CAT_FEATS
 from models.gbdt.utils import prepare_xy_lightgbm
 from pipelines.common.checkpointing import save_lgbm
 from pipelines.common.common import mk_record
+from pipelines.common.evaluation import save_binary_eval_predictions
 
 logger = logging.getLogger(__name__)
+
+GBDT_EVAL_EXTRA_COLS = [
+        "user_id",
+        "tok_id",
+    ]
+
 
 #===
 def monitor_memory(interval=5):
@@ -84,7 +91,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         model = GBDTModel(track=track)
         X_test, y_test = model.fit(df_train, df_test)
         #===== EVALUATE =====
-        metrics = model.evaluate(X_test, y_test)
+        metrics = model.evaluate(X_test, y_test, return_detailed=True)
         records = [mk_record(
             model_name="gbdt",
             track=track,
@@ -94,6 +101,14 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             variant=LESION,
             tag=tag,
             )]
+
+        pred_path = save_binary_eval_predictions(
+            records[0],
+            y_true=metrics["targets"],
+            probs=metrics["preds"],
+            extra_cols={col: df_test[col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS},
+        )
+        logger.info(f"Saved evaluation predictions to {pred_path}")
     
         #== SAVING
         if SUBSET is None:
@@ -137,22 +152,38 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         combined_metrics = ens_out.combined_metrics
         
         out_records = []
+        evals_to_write = {}
 
         for tr in TRACKS:
+            
+            # === PREDICT in pipeline for eval saving
+            X_test, y_test = tests[tr]
+            p_tr = ens_model.models_tr[tr].predict_proba(X_test)
+            p_all = ens_model.model_all.predict_proba(X_test)
+            p_comb = combine_probs(p_tr, p_all)
+            extra_cols = {col: tr_dfs[tr][1][col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS}
+
             tr_mets = per_track_metrics[tr]
             comb_mets = combined_metrics[tr]
-            out_records.append(
-                mk_record(
-                    model_name="gbdt",
-                    track=tr,
-                    subset=SUBSET,
-                    train_with_dev=train_with_dev,
-                    metrics=tr_mets,
-                    variant=LESION,
-                    tag=tag,
-                )
+
+            # == track_record
+            tr_record = mk_record(
+                model_name="gbdt",
+                track=tr,
+                subset=SUBSET,
+                train_with_dev=train_with_dev,
+                metrics=tr_mets,
+                variant=LESION,
+                tag=tag,
             )
-            out_records.append(mk_record(
+            out_records.append(tr_record)
+            evals_to_write[("gbdt", tr)] = {
+                "y_true": y_test.to_numpy(),
+                "probs": p_tr.to_numpy(),
+                "extra_cols": extra_cols,
+            }
+
+            comb_record = mk_record(
                 model_name="gbdt_ens",
                 track=tr,
                 subset=SUBSET,
@@ -160,24 +191,48 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
                 metrics=comb_mets,
                 variant=LESION,
                 tag=tag,
-            ))
+            )
+            out_records.append(comb_record)
+            evals_to_write[("gbdt_ens", tr)] = {
+                "y_true": y_test.to_numpy(),
+                "probs": np.asarray(p_comb),
+                "extra_cols": extra_cols,
+            }
 
         if per_track_metrics.get(ALL_TRACK) is not None:
+            X_all_test, y_all_test = tests[ALL_TRACK]
+            p_all = ens_model.model_all.predict_proba(X_all_test)
             all_mets = per_track_metrics[ALL_TRACK]
-            out_records.append(mk_record(
-                model_name="gbdt_ens",
+            all_record = mk_record(
+                model_name="gbdt_all",
                 track=ALL_TRACK,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
                 variant=LESION,
                 metrics=all_mets,
                 tag=tag,
-            ))
+            )
+            out_records.append(all_record)
+            evals_to_write[("gbdt_all", ALL_TRACK)] = {
+                "y_true": y_all_test.to_numpy(),
+                "probs": p_all.to_numpy(),
+                "extra_cols": {col: df_all_test[col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS},
+            }
 
-        #== SAVING
-        if SUBSET is None:
-            for rec in out_records:
-                save_lgbm(model.model, rec)
+        for rec in out_records:
+            pred_path = save_binary_eval_predictions(
+                rec,
+                y_true=evals_to_write[(rec.model, rec.track)]["y_true"],
+                probs=evals_to_write[(rec.model, rec.track)]["probs"],
+                extra_cols=evals_to_write[(rec.model, rec.track)]["extra_cols"],
+            )
+            logger.info(f"Saved evaluation predictions to {pred_path}")
+
+            if SUBSET is None:
+                if rec.model == "gbdt":
+                    save_lgbm(ens_model.models_tr[rec.track].model, rec)
+                elif rec.model == "gbdt_all":
+                    save_lgbm(ens_model.model_all.model, rec)
         return out_records
 
 # """

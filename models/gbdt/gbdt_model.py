@@ -82,7 +82,7 @@ class GBDTModel:
         # retain original index
         return pd.Series(self.model.predict_proba(X)[:, 1], index=X.index)
 
-    def evaluate(self, X_test: pd.DataFrame, y_test: pd.DataFrame) -> dict:
+    def evaluate(self, X_test: pd.DataFrame, y_test: pd.DataFrame, return_detailed: bool = False) -> dict:
         p = self.predict_proba(X_test)
         y_pred = (p >= 0.5).astype(int)
 
@@ -94,8 +94,13 @@ class GBDTModel:
         logger.info(f"Accuracy: {acc}")
         logger.info(f"F1 Score: {f1}")
         
-        return {
+        metrics = {
             "auc": auc,
             "accuracy": acc,
             "f1": f1,
         }
+        if return_detailed:
+            metrics["preds"] = p.to_numpy()
+            metrics["targets"] = y_test.to_numpy()
+
+        return metrics
