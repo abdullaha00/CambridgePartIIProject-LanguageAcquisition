@@ -192,7 +192,7 @@ class SDKTModel(nn.Module):
 
         return F.binary_cross_entropy(preds[mask], targets[mask].float())
 
-    def evaluate(self, dl, teacher_forcing=True) -> dict[str, float]:
+    def evaluate(self, dl, teacher_forcing=True, return_detailed: bool = False) -> dict[str, float]:
         self.eval()
         all_preds = []
         all_targets = []
@@ -217,6 +217,9 @@ class SDKTModel(nn.Module):
 
         metrics = compute_metrics(p.numpy(), t.numpy())
 
+        if return_detailed:
+            metrics["preds"] = p.numpy()
+            metrics["targets"] = t.numpy()
+
         return metrics
         
-

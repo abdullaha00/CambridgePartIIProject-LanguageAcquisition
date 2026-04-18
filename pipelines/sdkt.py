@@ -182,6 +182,13 @@ def run_sdkt_pipeline(
             )
             records.append(rec)
 
+            pred_path = save_binary_eval_predictions(
+                rec,
+                y_true=metrics["targets"],
+                probs=metrics["preds"],
+            )
+            logger.info(f"Saved evaluation predictions to {pred_path}")
+
             if SUBSET is None and (save_every and epoch % save_every == 0 or epoch == EPOCHS):
                 if model_name == "vdkt":
                     extra_data = {
