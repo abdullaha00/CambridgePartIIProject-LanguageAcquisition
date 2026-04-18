@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple
+from typing import Dict, List, Tuple
 from functools import partial
 from torch.utils.data import DataLoader
 import torch
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer
 from tqdm import tqdm
 import logging
-import pandas as pd
 from data_processing.data_parquet import load_train_and_eval_df
 from models.modular_qg.common.data import build_user_sequences_text
 from models.modular_qg.common.tokens import TOK_N, TOK_Y
@@ -20,20 +19,8 @@ class LMKTDataBundle:
     train_dataloader: DataLoader
     eval_histories: Dict[str, List[Tuple[str, int]]]
     pref_ns: Dict[str, int]
-    train_ex_texts: set[str]
-    eval_ex_texts: dict[str, str]
+    train_seen_prompts: set[str]
     tokenizer: AutoTokenizer
-
-def ex_key_to_tok_text(df_collapsed: pd.DataFrame) -> Dict[str, str]:
-    return dict(zip(df_collapsed["ex_key"], df_collapsed["tok_text"]))
-
-def user_ordered_ex_texts(df_raw, ex_text_map):
-    user_ex_texts = {}
-    for uid, group in df_raw.groupby("user_id", sort=False):
-        ex_keys = group["ex_key"].tolist()
-        ex_texts = [ex_text_map[ex_key] for ex_key in ex_keys]
-        user_ex_texts[uid] = ex_texts
-    return user_ex_texts
 
 def build_lmkt_dataloaders(
     track: str,
@@ -69,15 +56,6 @@ def build_lmkt_dataloaders(
     assert "ex_key" in df_train.columns, "ex_key not found in collapsed training dataframe"
     assert "ex_key" in df_eval.columns, "ex_key not found in collapsed eval"
 
-    # === SEEN/UNSEEN ANALYSIS
-    train_ex_lookup = ex_key_to_tok_text(df_train)
-    eval_ex_lookup = ex_key_to_tok_text(df_eval)
-
-    train_texts = set(train_ex_lookup.values())
-    eval_texts = user_ordered_ex_texts(df_eval, eval_ex_lookup)
-
-    # ====
-
     # Merge with prompts to get prompt text
     df_train = df_train.merge(dft_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
     df_eval = df_eval.merge(dfe_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
@@ -87,6 +65,9 @@ def build_lmkt_dataloaders(
     assert missing_train == 0, f"Missing prompts in training data after merge: {missing_train}"
     missing_eval = df_eval["prompt"].isna().sum()
     assert missing_eval == 0, f"Missing prompts in eval data: {missing_eval}"
+
+    # seen/unseen prompts
+    train_seen_prompts = set(df_train["prompt"].tolist())
 
     #==== Build sequences
     logger.info("Building sequences")
@@ -100,7 +81,6 @@ def build_lmkt_dataloaders(
 
     eval_histories_prepended = {}
     pref_ns = {}
-    eval_seen_questions = {}
 
     for uid, eval_history in tqdm(eval_histories.items(), 
                                   desc="Prepending training history to eval histories", leave=False):
@@ -110,11 +90,6 @@ def build_lmkt_dataloaders(
         eval_histories_prepended[uid] = train_history + eval_history
         pref_n = len(train_history) # COUNT OF EXERCISES
         pref_ns[uid] = pref_n
-
-        # distinguish between seen and unseen questions in eval
-        eval_seen_questions[uid] = eval_texts[uid]
-        assert len(eval_seen_questions[uid]) == len(eval_history), \
-        f"Length mismatch; user {uid}: {len(eval_seen_questions[uid])} seen question flags vs {len(eval_history)} eval exercises"
         
     #==== Build dataset
     train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer)
@@ -129,8 +104,6 @@ def build_lmkt_dataloaders(
     return LMKTDataBundle(train_dataloader=train_dl, 
                           eval_histories=eval_histories_prepended, 
                           pref_ns=pref_ns, 
-                          train_ex_texts=train_texts,
-                          eval_ex_texts=eval_texts,
+                          train_seen_prompts=train_seen_prompts,
                           tokenizer=tokenizer)
-
 

@@ -74,8 +74,7 @@ class LMKTModel(torch.nn.Module):
             self, 
             histories: Dict[str, List[Tuple[str, int]]],
             eval_pref_ns: Dict[str, int],
-            train_ex_texts: set[str],
-            eval_ex_texts: Dict[str, List[str]]
+            train_seen_prompts: set[str],
         ) -> dict[str, float]:
 
         """
@@ -97,13 +96,7 @@ class LMKTModel(torch.nn.Module):
         all_preds_n = []
 
         all_seen_mask = []
-        all_prompt_texts = []
-        all_ex_texts = []
-
-        assert train_ex_texts is not None and eval_ex_texts is not None 
-        
-        eval_ex_set = {t for text_list in eval_ex_texts.values() for t in text_list}
-        unseen_ex_texts = eval_ex_set - train_ex_texts
+        assert train_seen_prompts is not None
 
         with torch.no_grad():
             for uid, hist in tqdm(histories.items(), desc="Evaluating", leave=False):
@@ -129,17 +122,15 @@ class LMKTModel(torch.nn.Module):
 
                 eval_label_idxs = all_label_pos[pref_n:]
                 eval_prompts = [p for p, _ in hist[pref_n:]]
-                eval_toktext = eval_ex_texts[uid]
 
                 assert len(eval_label_idxs) == len(eval_prompts)
-                assert len(eval_prompts) == len(eval_toktext)
                                 
                 # SCORE USING MODEL CONTEXT WINDOW
 
-                for pos, prompt_text, toktext in zip(eval_label_idxs, eval_prompts, eval_toktext):
+                for pos, prompt_text in zip(eval_label_idxs, eval_prompts):
                     assert pos > 0
 
-                    is_seen = toktext in train_ex_texts
+                    is_seen = prompt_text in train_seen_prompts
 
                     start = max(0, pos-self.max_length) 
                     window_ids = ids[:, start:pos]
@@ -166,8 +157,6 @@ class LMKTModel(torch.nn.Module):
                     all_preds_n.append(last_tok_sm[n_id].item())
 
                     all_seen_mask.append(is_seen)
-                    all_prompt_texts.append(prompt_text)
-                    all_ex_texts.append(toktext)
 
             #===== METRIC CALCULATION =====
             

@@ -78,8 +78,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
             metrics = model.evaluate_metrics(
                 lmkt_data.eval_histories, 
                 lmkt_data.pref_ns,
-                lmkt_data.train_ex_texts,
-                lmkt_data.eval_ex_texts
+                lmkt_data.train_seen_prompts,
             )
             
             logger.info("Epoch %d | AUC=%.5f | AUC (seen)=%.5f | AUC (unseen)=%.5f | Accuracy=%.5f | F1=%.5f",
