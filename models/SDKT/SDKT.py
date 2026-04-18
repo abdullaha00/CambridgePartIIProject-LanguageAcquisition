@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import logging
 import torch.nn.functional as F
+import numpy as np
 
 from models.utils import compute_metrics
 
@@ -196,6 +197,9 @@ class SDKTModel(nn.Module):
         self.eval()
         all_preds = []
         all_targets = []
+        det_uids = []
+        det_tok_ids = []
+        det_target_pos = []
 
         for batch in dl:
             # Move batch to device
@@ -212,6 +216,16 @@ class SDKTModel(nn.Module):
                 all_preds.append(preds[mask].cpu())
                 all_targets.append(targets[mask].cpu())
 
+                if return_detailed:
+                    for uid, tok_ids, target_pos in zip(
+                        batch["uid"],
+                        batch["dec_tok_id"],
+                        batch["dec_target_pos"],
+                    ):
+                        det_uids.extend([uid] * len(tok_ids))
+                        det_tok_ids.extend(tok_ids.tolist())
+                        det_target_pos.extend(target_pos.tolist())
+
         p = torch.cat(all_preds, dim=0)
         t = torch.cat(all_targets, dim=0)
 
@@ -220,6 +234,9 @@ class SDKTModel(nn.Module):
         if return_detailed:
             metrics["preds"] = p.numpy()
             metrics["targets"] = t.numpy()
+            metrics["uid"] = np.asarray(det_uids)
+            metrics["tok_id"] = np.asarray(det_tok_ids)
+            metrics["target_pos"] = np.asarray(det_target_pos)
 
         return metrics
         

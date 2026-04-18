@@ -167,7 +167,13 @@ def run_sdkt_pipeline(
 
         if epoch == EPOCHS or epoch % eval_every == 0:
             metrics = model.evaluate(data_bundle.eval_dl, return_detailed=True)
-            logger.info(f"Epoch {epoch} - Eval Metrics: {metrics}")
+            logger.info(
+                "Epoch %d - Eval Metrics: AUC=%.5f | Accuracy=%.5f | F1=%.5f",
+                epoch,
+                metrics["auc"],
+                metrics["accuracy"],
+                metrics["f1"],
+            )
             rec = MetricRecord(
                 model=model_name,
                 track=TRACK,
@@ -186,6 +192,11 @@ def run_sdkt_pipeline(
                 rec,
                 y_true=metrics["targets"],
                 probs=metrics["preds"],
+                extra_cols={
+                    "user_id": metrics["uid"],
+                    "tok_id": metrics["tok_id"],
+                    "target_pos": metrics["target_pos"]
+                },
             )
             logger.info(f"Saved evaluation predictions to {pred_path}")
 

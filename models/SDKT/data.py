@@ -39,7 +39,7 @@ def build_user_sequences(
     df: pd.DataFrame,
     token_vocab: dict[str, int],
     meta_vocabs: dict[str, dict[str, int]],
-) -> dict[str, tuple[list[int], dict[str, list[int]], list[int]]]:
+) -> dict[str, tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, np.ndarray]]:
 
     user_seqs = {}
     unk_tok_id = len(token_vocab) + 1
@@ -54,6 +54,7 @@ def build_user_sequences(
         
         
         label_seq = df_u["label"].to_numpy()
+        tok_id_seq = df_u["tok_id"].to_numpy()
 
         meta_ids = {}
 
@@ -66,21 +67,21 @@ def build_user_sequences(
                 to_numpy(dtype=np.int64)
                 )
         
-        user_seqs[uid] = (lemma_seq, meta_ids, label_seq)
+        user_seqs[uid] = (lemma_seq, meta_ids, label_seq, tok_id_seq)
 
     return user_seqs
 
 #===== DATASETS
 
 class SDKTTrainDataset(Dataset):
-    def __init__(self, user_seqs: dict[str, tuple[list[int], dict[str, list[int]], list[int]]]):
+    def __init__(self, user_seqs: dict[str, tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, np.ndarray]]):
         self.user_seqs = list(user_seqs.values())
     
     def __len__(self):
         return len(self.user_seqs)
     
     def __getitem__(self, idx):
-        lemma_seq, meta_ids, label_seq = self.user_seqs[idx]
+        lemma_seq, meta_ids, label_seq, _ = self.user_seqs[idx]
         T = len(lemma_seq)
 
         split_r = np.random.uniform(0.4, 0.9)
@@ -106,15 +107,16 @@ class SDKTEvalDataset(Dataset):
             if uid not in train_seqs:
                 logger.warning(f"User {uid} in eval set not found in train set. This user will be skipped in evaluation.")
                 continue
-            tr_q, tr_m, tr_l = train_seqs[uid]
-            ev_q, ev_m, ev_l = eval_seqs[uid]
+            tr_q, tr_m, tr_l, _ = train_seqs[uid]
+            ev_q, ev_m, ev_l, ev_tok_ids = eval_seqs[uid]
+            ev_target_pos = np.arange(len(ev_q), dtype=np.int64) + len(tr_q)
 
-            self.data.append((tr_q, tr_l, tr_m, ev_q, ev_l, ev_m))
+            self.data.append((uid, tr_q, tr_l, tr_m, ev_q, ev_l, ev_m, ev_tok_ids, ev_target_pos))
     def __len__(self) -> int:
         return len(self.data)
 
     def __getitem__(self, idx: int) -> dict:
-        tr_q, tr_l, tr_m, ev_q, ev_l, ev_m = self.data[idx]
+        uid, tr_q, tr_l, tr_m, ev_q, ev_l, ev_m, ev_tok_ids, ev_target_pos = self.data[idx]
         return {
             "enc_q": torch.from_numpy(tr_q),
             "enc_a": torch.from_numpy(tr_l),
@@ -123,7 +125,10 @@ class SDKTEvalDataset(Dataset):
             "dec_a": torch.from_numpy(ev_l),
             "dec_m": {col: torch.from_numpy(ids) for col, ids in ev_m.items()},
             "enc_last_q": torch.tensor(tr_q[-1], dtype=torch.long),
-            "enc_last_a": torch.tensor(tr_l[-1], dtype=torch.long)
+            "enc_last_a": torch.tensor(tr_l[-1], dtype=torch.long),
+            "uid": uid,
+            "dec_tok_id": ev_tok_ids,
+            "dec_target_pos": ev_target_pos,
         }
     
 
@@ -169,6 +174,9 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         
         enc_last_q_batch[i] = x["enc_last_q"]
         enc_last_a_batch[i] = x["enc_last_a"]
+        uid_batch = x["uid"]
+        dec_tok_id_batch = x["dec_tok_id"]
+        dec_target_pos_batch = x["dec_target_pos"]
     
     return {
         "enc_q": enc_q_batch,
@@ -180,5 +188,8 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         "dec_m": dec_m_batch,
         "dec_mask": dec_mask_batch,
         "enc_last_q": enc_last_q_batch,
-        "enc_last_a": enc_last_a_batch
+        "enc_last_a": enc_last_a_batch,
+        "uid": uid_batch,
+        "dec_tok_id": dec_tok_id_batch,
+        "dec_target_pos": dec_target_pos_batch
     }
