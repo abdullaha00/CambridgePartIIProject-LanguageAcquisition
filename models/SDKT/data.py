@@ -52,8 +52,8 @@ def build_user_sequences(
                      .fillna(unk_tok_id)
                      .to_numpy(dtype=np.int64))
         
-        # NOTE: we flip labels so that 1 = correct and 0 = incorrect, since DKT typically models P(correct)
-        label_seq = (1-df_u["label"]).to_numpy()
+        
+        label_seq = df_u["label"].to_numpy()
 
         meta_ids = {}
 
