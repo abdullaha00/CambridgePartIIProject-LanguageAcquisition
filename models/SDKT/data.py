@@ -174,11 +174,8 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         
         enc_last_q_batch[i] = x["enc_last_q"]
         enc_last_a_batch[i] = x["enc_last_a"]
-        uid_batch = x["uid"]
-        dec_tok_id_batch = x["dec_tok_id"]
-        dec_target_pos_batch = x["dec_target_pos"]
     
-    return {
+    out = {
         "enc_q": enc_q_batch,
         "enc_a": enc_a_batch,
         "enc_m": enc_m_batch,
@@ -188,8 +185,14 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
         "dec_m": dec_m_batch,
         "dec_mask": dec_mask_batch,
         "enc_last_q": enc_last_q_batch,
-        "enc_last_a": enc_last_a_batch,
-        "uid": uid_batch,
-        "dec_tok_id": dec_tok_id_batch,
-        "dec_target_pos": dec_target_pos_batch
+        "enc_last_a": enc_last_a_batch
     }
+
+
+    # only tracked in eval dataset
+    if "uid" in batch[0]:
+        out["uid"] = [x["uid"] for x in batch]
+        out["dec_tok_id"] = [x["dec_tok_id"] for x in batch]
+        out["dec_target_pos"] = [x["dec_target_pos"] for x in batch]
+
+    return out
