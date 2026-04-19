@@ -104,6 +104,8 @@ elif MODEL == "dkt" or MODEL == "bert-dkt":
         ITEM_LEVEL=ITEM_LEVEL,
         epochs=EPOCHS,
         eval_every=EVAL_EVERY,
+        save_every=args.save_every,
+        resume_from=args.resume,
         next_args=next_args,
         tag=args.tag,
     )
