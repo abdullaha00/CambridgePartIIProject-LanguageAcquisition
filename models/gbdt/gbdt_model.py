@@ -14,7 +14,8 @@ class GBDTModel:
         self.track = track
         self.model = None
         self.feat_cols = None
-        self.cat_cols = None    
+        self.cat_cols = None
+        self.cat_categories = None
 
         self.X_test = None
         self.y_test = None        
@@ -25,6 +26,7 @@ class GBDTModel:
         
         self.feat_cols = feat_cols
         self.cat_cols = cat_cols
+        self.cat_categories = {col: X_train[col].cat.categories for col in self.cat_cols}
 
         n_estimators = NYU_LGBM_PARAMS[self.track]["n_estimators"]
 
@@ -71,13 +73,14 @@ class GBDTModel:
         assert self.model is not None, "Model has not been trained yet. Call fit() before predict_proba()."
         assert self.feat_cols is not None, "Feature columns not set. Call fit() before predict_proba()."
         assert self.cat_cols is not None, "Categorical columns not set. Call fit() before predict_proba()."
+        assert self.cat_categories is not None, "Categorical categories not set. Call fit() before predict_proba()."
 
         # ensure all features are present in the input, and in the same order as during training
         X = X.reindex(columns=self.feat_cols, fill_value=0)
 
         for col in self.cat_cols:
-            if not isinstance(X[col].dtype, pd.CategoricalDtype):
-                X[col] = X[col].astype("category")
+            # use training categories
+            X[col] = pd.Categorical(X[col], categories=self.cat_categories[col])
 
         # retain original index
         return pd.Series(self.model.predict_proba(X)[:, 1], index=X.index)

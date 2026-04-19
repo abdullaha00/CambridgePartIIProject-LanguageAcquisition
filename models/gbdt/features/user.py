@@ -12,7 +12,7 @@ def exercise_view(df: pd.DataFrame) -> pd.DataFrame:
 def add_bursts(ex: pd.DataFrame) -> pd.DataFrame:
     # New burst if its been more than 1 hour since last exercise encounter
     ex["dt_hours"] = ex.groupby("user_id")["days"].diff() * 24
-    ex["new_burst"]  = ex["dt_hours"].isna() | (ex["dt_hours"] >= 1)
+    ex["new_burst"]  = ex["dt_hours"].isna() | (ex["dt_hours"] > 1)
     ex["burst_id"] = ex.groupby("user_id")["new_burst"].cumsum() - 1
     return ex
 
@@ -39,7 +39,7 @@ def burst_stats(ex: pd.DataFrame) -> pd.DataFrame:
 
 def tod_entropy(ex: pd.DataFrame) -> pd.DataFrame:
     tod = ex["days"].mod(1.0)
-    bins = (tod*72).astype(int).clip(upper=71).rename("bin")
+    bins = tod.mul(72).round().astype(int).rename("bin")
 
     df_bin = (
 
@@ -53,7 +53,7 @@ def tod_entropy(ex: pd.DataFrame) -> pd.DataFrame:
     bin_sums = df_bin.groupby("user_id", sort=False)["cnt"].transform("sum")
     probs = df_bin["cnt"] / bin_sums
 
-    df_bin["-p_log_p"] = - probs * np.log(probs)
+    df_bin["-p_log_p"] = - probs * np.log2(probs)
 
     out = (
 
@@ -85,4 +85,3 @@ def add_user_feats_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     df_all = df_all.merge(user_feats, on="user_id"); steps.update(1)
     
     return df_all
-

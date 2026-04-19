@@ -1,13 +1,12 @@
 from dataclasses import dataclass
 import gc
-from lightgbm import LGBMClassifier
 import numpy as np
 import pandas as pd
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 from models.gbdt.gbdt_model import GBDTModel
 from models.gbdt.params import NYU_LGBM_PARAMS
-from models.gbdt.utils import prepare_xy_lightgbm
 from config.consts import ALL_TRACK, TRACKS
+from models.gbdt.features.build_features import mark_ids_with_lang
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,7 +82,15 @@ class GBDTEnsemble:
 
             p_tr = m_tr.predict_proba(X_test)
 
-            p_all = self.model_all.predict_proba(X_test)
+            if track == ALL_TRACK:
+                # this is already marked, so we just predict
+                p_all = self.model_all.predict_proba(X_test)
+            else:
+                # these tests come from per-track models, so we need to mark
+                src_lang, _ = track.split("_")
+                X_test_marked = mark_ids_with_lang(X_test.copy(), src_lang)
+                X_test_marked["track"] = track
+                p_all = self.model_all.predict_proba(X_test_marked)
             
             per_track_metrics[track] = m_tr.evaluate(X_test, y_test)
 

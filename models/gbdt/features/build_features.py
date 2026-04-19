@@ -9,15 +9,30 @@ from models.gbdt.params import CAT_FEATS
 
 def mark_ids_with_lang(df, src_lang):
     # Mark identifiers with language to prevent collisions in combined track model
-    id_cols = {"tok", "lemma", "prev_tok", "next_tok", "rt_tok", "user_id"} 
-    for col in id_cols:
+    prefix = f"{src_lang}_"
 
-        if col in {"prev_tok", "next_tok", "rt_tok"}:
-            # these may have <NONE> values which we don't want to mark
-            mask_none = df[col] == "<NONE>"
-            df[col] = df[col].where(mask_none, src_lang + "_" + df[col])
-        df[col] = src_lang + "_" + df[col].astype(str)
+    for col in {"tok", "lemma", "user_id"}:
+        if col not in df.columns:
+            continue
+
+        df[col] = df[col].astype("string")
+        mask = df[col].notna()
+        df.loc[mask, col] = prefix + df.loc[mask, col].astype(str)
+
+    for col in {"prev_tok", "next_tok", "rt_tok"}:
+        if col not in df.columns:
+            continue
         
+        df[col] = df[col].astype("string")
+        mask = df[col].notna() & df[col].ne("<NONE>")
+        df.loc[mask, col] = prefix + df.loc[mask, col].astype(str)
+
+    return df
+
+def add_exercise_features(df: pd.DataFrame) -> pd.DataFrame:
+    df["exercise_length"] = (
+        df.groupby("ex_key", sort=False)["tok"].transform("size").astype("int16")
+    )
     return df
 
 def build_features(df_train: pd.DataFrame, df_test: pd.DataFrame, train_with_dev, save_feats, track) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -31,7 +46,7 @@ def build_features(df_train: pd.DataFrame, df_test: pd.DataFrame, train_with_dev
     # and use a global exercise key
     df_all["ex_key"] = df_all["tok_id"].str.slice(0, 10)
 
-    # lowercase
+    df_all = add_exercise_features(df_all)
 
     # Temporal + user done with train/test together
     df_all = add_temporal_features_stream(df_all)

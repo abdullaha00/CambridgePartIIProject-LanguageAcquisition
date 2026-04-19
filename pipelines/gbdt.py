@@ -15,7 +15,7 @@ from models.gbdt.features.lesions import LESIONS, apply_lesion
 from models.gbdt.gbdt_model import GBDTModel 
 from data_processing.data_parquet import get_parquet, parquet_exists, load_train_and_eval_df
 from models.gbdt.features.feature_load_store import get_feature_dfs
-from models.gbdt.features.build_features import build_features
+from models.gbdt.features.build_features import build_features, mark_ids_with_lang
 from sklearn.metrics import roc_auc_score, f1_score
 from models.gbdt.ensemble import combine_probs
 import pandas as pd
@@ -121,6 +121,8 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         logger.info("Running GBDT ensemble pipeline for all tracks")
 
         tr_dfs = {}
+        df_all_train_m_list = []
+        df_all_test_m_list = []
         for tr in TRACKS:
             logger.info(f"Building features for {tr}...")
             df_train, df_test = get_feature_dfs(tr, subset=SUBSET, train_with_dev=train_with_dev, save_feats=SAVE_FEATS, clean_build=CLEAN_BUILD)
@@ -129,26 +131,35 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             if gbdt_args.lesion is not None:    
                 df_train = apply_lesion(df_train, gbdt_args.lesion)
                 df_test = apply_lesion(df_test, gbdt_args.lesion)
-            
-            df_train["track"] = tr
-            df_test["track"] = tr
-            
+
             tr_dfs[tr] = (df_train, df_test)
+
+            src_lang, _ = tr.split("_")
+            df_train_marked = mark_ids_with_lang(df_train.copy(), src_lang)
+            df_test_marked = mark_ids_with_lang(df_test.copy(), src_lang)
+
+            df_train_marked["track"] = tr
+            df_test_marked["track"] = tr
+
+            df_all_train_m_list.append(df_train_marked)
+            df_all_test_m_list.append(df_test_marked)
              
         ens_model = GBDTEnsemble()
         tests = ens_model.fit_individual_tracks(tr_dfs)
         
-        df_all_train = pd.concat([tr_dfs[tr][0] for tr in TRACKS], axis=0, ignore_index=True)
-        df_all_test = pd.concat([tr_dfs[tr][1] for tr in TRACKS], axis=0, ignore_index=True)
-        
+        df_all_train_m = pd.concat(df_all_train_m_list, axis=0, ignore_index=True)
+        df_all_test_m = pd.concat(df_all_test_m_list, axis=0, ignore_index=True)
+
         extra_cols_tr = {} 
         for track in TRACKS:
             extra_cols_tr[track] = {col: tr_dfs[track][1][col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS}
         
+        del df_all_train_m_list
+        del df_all_test_m_list
         del tr_dfs
         gc.collect()
         
-        tests[ALL_TRACK] = ens_model.fit_all_model(df_all_train, df_all_test)
+        tests[ALL_TRACK] = ens_model.fit_all_model(df_all_train_m, df_all_test_m)
         
         ens_out = ens_model.evaluate(tests)
 
@@ -163,7 +174,10 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             # === PREDICT in pipeline for eval saving
             X_test, y_test = tests[tr]
             p_tr = ens_model.models_tr[tr].predict_proba(X_test)
-            p_all = ens_model.model_all.predict_proba(X_test)
+            src_lang, _ = tr.split("_")
+            X_test_all = mark_ids_with_lang(X_test.copy(), src_lang)
+            X_test_all["track"] = tr
+            p_all = ens_model.model_all.predict_proba(X_test_all)
             p_comb = combine_probs(p_tr, p_all)
 
             tr_mets = per_track_metrics[tr]
@@ -219,7 +233,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             evals_to_write[("gbdt_all", ALL_TRACK)] = {
                 "y_true": y_all_test.to_numpy(),
                 "probs": p_all.to_numpy(),
-                "extra_cols": {col: df_all_test[col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS},
+                "extra_cols": {col: df_all_test_m[col].to_numpy() for col in GBDT_EVAL_EXTRA_COLS},
             }
 
         for rec in out_records:

@@ -4,19 +4,27 @@ from data_processing.data_parquet import get_parquet, save_parquet
 
 BATCH = 256
 
-stanza.download("en")
+pipeline_cache: dict[str, stanza.Pipeline] = {}
 
-nlp = stanza.Pipeline(
-        lang="en",
-        processors="tokenize,pos,lemma,depparse",
-        tokenize_pretokenized=True,
-        tokenize_no_ssplit=True,
-        use_gpu=True
-    )
+def get_stanza_pipeline(lang: str) -> stanza.Pipeline:
+    pipeline = pipeline_cache.get(lang)
+    if pipeline is None:
+        stanza.download(lang)
+        pipeline = stanza.Pipeline(
+            lang=lang,
+            processors="tokenize,pos,lemma,depparse",
+            tokenize_pretokenized=True,
+            tokenize_no_ssplit=True,
+            use_gpu=True
+        )
+        pipeline_cache[lang] = pipeline
+    return pipeline
 
 
 def reprocess_and_save_all():
     for track in tqdm(["en_es", "es_en", "fr_en"], desc="Language"):
+        src_lang, _ = track.split("_") # toks in dataset are in src_lang
+        nlp = get_stanza_pipeline(src_lang)
 
         for split in tqdm(["train", "dev", "test"], desc=f"{track} track", leave=False):
 

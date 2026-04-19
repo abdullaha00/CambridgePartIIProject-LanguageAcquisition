@@ -44,6 +44,7 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
 
     # UNMASKED total encounters
     ex_seen = np.zeros(N, dtype=np.int32)
+    exercise_num = np.zeros(N, dtype=np.int32)
     tok_seen = np.zeros(N, dtype=np.int32)
     root_seen = np.zeros(N, dtype=np.int32)
 
@@ -127,6 +128,7 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
             day = day_arr[row_idxs[0]]  # all rows in ex have same day
 
             ex_seen[row_idxs] = ex_count[toks_tuple]
+            exercise_num[row_idxs] = idx
             ex_count[toks_tuple] += 1
 
             tok_agg: dict[str, list[int]] = {}  # tok -> [count, label_sum]
@@ -269,6 +271,7 @@ def add_temporal_features_stream(df_all: pd.DataFrame) -> pd.DataFrame:
     # ======== WRITING TO DF
 
     df["ex_seen"] = ex_seen
+    df["exercise_num"] = exercise_num
     df["tok_seen"] = tok_seen
     df["root_seen"] = root_seen
     df["tok_seen_lab"] = tok_seen_lab

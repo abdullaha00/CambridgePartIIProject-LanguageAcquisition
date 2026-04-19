@@ -1,5 +1,4 @@
-
-
+import pandas as pd
 from models.gbdt.params import CAT_FEATS, DROP
 
 
@@ -17,15 +16,16 @@ def prepare_xy_lightgbm(df_train, df_test, track: str):
         if "track" in feat_cols:
             feat_cols.remove("track")
 
-    X_train = df_train[feat_cols]
-    X_test = df_test[feat_cols]
+    X_train = df_train[feat_cols].copy()
+    X_test = df_test[feat_cols].copy()
     y_train = df_train["label"]
     y_test = df_test["label"]
 
     for col in cat_cols:
-        X_train[col] = X_train[col].astype("category")
-        X_test[col] = X_test[col].astype("category")
-    
+        unique_vals = pd.concat([X_train[col], X_test[col]], ignore_index=True).dropna().unique()
+        X_train[col] = pd.Categorical(X_train[col], categories=unique_vals)
+        X_test[col] = pd.Categorical(X_test[col], categories=unique_vals)
+
     return X_train, y_train, X_test, y_test, feat_cols, cat_cols
 
 def align_train_test(df_train, df_test):
