@@ -14,18 +14,31 @@ def eval_directory(rec) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
 
-def save_binary_eval_predictions(rec, y_true, probs, extra_cols: dict[str, Iterable] | None = None) -> Path:
+def save_binary_eval_predictions(
+    rec,
+    y_true,
+    probs,
+    extra_cols: dict[str, Iterable] | None = None,
+    pred_labels: Iterable | None = None,
+) -> Path:
     y = np.asarray(y_true, dtype=np.float64)
     p = np.asarray(probs, dtype=np.float64)
 
     if y.shape[0] != p.shape[0]:
         raise ValueError("Prediction inputs must have matching lengths.")
 
+    if pred_labels is None:
+        pred = (p >= 0.5).astype(np.int8)
+    else:
+        pred = np.asarray(pred_labels, dtype=np.int8)
+        if len(pred) != len(y):
+            raise ValueError(f"Length mismatch: {len(pred)} != {len(y)} (pred_labels)")
+
     frame = pd.DataFrame(
         {
             "label": y,
             "prob": p,
-            "pred": (p >= 0.5).astype(np.int8),
+            "pred": pred,
         }
     )
 
@@ -69,7 +82,6 @@ def bootstrap(y_true, probs, n_bootstrap: int = 1000, ci: float = 0.95) -> dict[
 
     score = binary_metrics_score(y, p)
 
-    metrics = []
     n_samples = len(y)
     all_metrics: dict[str, list[float]] = {key: [] for key in score.keys()}
 
