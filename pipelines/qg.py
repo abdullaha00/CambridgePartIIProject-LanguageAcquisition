@@ -226,5 +226,3 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=No
         tag=tag,
     )
     return [rec]
-
-    

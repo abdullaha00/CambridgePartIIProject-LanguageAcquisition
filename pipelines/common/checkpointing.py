@@ -10,6 +10,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+BASE_SAVE_DIR = Path("")
+
 @dataclass(frozen=True)
 class RunKey:
     model: str
@@ -41,7 +43,7 @@ def save_name(key: RunKey, suffix: str = ".ckpt", auc: float | None = None, epoc
     return f"{subset_str}_{twd_str}_{variant_str}{tag_str}{epoch_str}{auc_str}_{ts}{suffix}"
 
 def ckpt_dir(key: RunKey) -> Path:
-    p = Path("model_outputs") / key.model / key.track
+    p = BASE_SAVE_DIR / "model_outputs" / key.model / key.track
     return p
 
 def save_torch(
