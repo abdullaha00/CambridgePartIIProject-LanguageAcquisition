@@ -13,13 +13,13 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-def parse_dkt_args(dkt_args=None):
-    # PARSE DKT SPECIFIC FLAGS
-    p = argparse.ArgumentParser(description="DKT Pipeline Args")    
-    args = p.parse_args(dkt_args)
-    return args
+# def parse_dkt_args(dkt_args=None):
+#     # PARSE DKT SPECIFIC FLAGS
+#     p = argparse.ArgumentParser(description="DKT Pipeline Args")    
+#     args = p.parse_args(dkt_args)
+#     return args
     
-def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag=None, save_every: int | None = None, resume_from: str | None = None):
+def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag, save_every: int | None, resume_from: str | None):
 
     # dkt_args = parse_dkt_args(next_args)
 
