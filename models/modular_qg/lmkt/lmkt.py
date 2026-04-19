@@ -1,5 +1,6 @@
 import re
 from typing import List, Dict, Tuple
+import numpy as np
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
@@ -75,6 +76,7 @@ class LMKTModel(torch.nn.Module):
             histories: Dict[str, List[Tuple[str, int]]],
             eval_pref_ns: Dict[str, int],
             train_seen_prompts: set[str],
+            return_detailed: bool = True,
         ) -> dict[str, float]:
 
         """
@@ -97,6 +99,9 @@ class LMKTModel(torch.nn.Module):
 
         all_seen_mask = []
         assert train_seen_prompts is not None
+        det_uids = []
+        det_target_pos = []
+        det_prompt_texts = []
 
         with torch.no_grad():
             for uid, hist in tqdm(histories.items(), desc="Evaluating", leave=False):
@@ -122,12 +127,17 @@ class LMKTModel(torch.nn.Module):
 
                 eval_label_idxs = all_label_pos[pref_n:]
                 eval_prompts = [p for p, _ in hist[pref_n:]]
+                eval_target_pos = range(pref_n, pref_n + len(eval_label_idxs))
 
                 assert len(eval_label_idxs) == len(eval_prompts)
                                 
                 # SCORE USING MODEL CONTEXT WINDOW
 
-                for pos, prompt_text in zip(eval_label_idxs, eval_prompts):
+                for pos, prompt_text, target_pos in zip(
+                    eval_label_idxs,
+                    eval_prompts,
+                    eval_target_pos,
+                ):
                     assert pos > 0
 
                     is_seen = prompt_text in train_seen_prompts
@@ -157,6 +167,10 @@ class LMKTModel(torch.nn.Module):
                     all_preds_n.append(last_tok_sm[n_id].item())
 
                     all_seen_mask.append(is_seen)
+                    if return_detailed:
+                        det_uids.append(uid)
+                        det_target_pos.append(target_pos)
+                        det_prompt_texts.append(prompt_text)
 
             #===== METRIC CALCULATION =====
             
@@ -166,8 +180,10 @@ class LMKTModel(torch.nn.Module):
 
             # USE P(Y) > P(N) to predict Y
             preds = (torch.tensor(all_preds_y) > torch.tensor(all_preds_n)).long()
-            accuracy = accuracy_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
-            f1 = f1_score(torch.tensor(all_labels).cpu().numpy(), preds.cpu().numpy())
+            pred_labels = preds.cpu().numpy().astype(np.int8)
+            labels = np.asarray(all_labels, dtype=np.int8)
+            accuracy = accuracy_score(labels, pred_labels)
+            f1 = f1_score(labels, pred_labels)
 
             # labels and preds for seen vs unseen analysis
             seen_labels, unseen_labels = [], []
@@ -185,7 +201,7 @@ class LMKTModel(torch.nn.Module):
             if len(set(unseen_labels)) <= 1:
                 logger.warning("Only one class present in unseen_labels; cannot compute AUC here")
 
-            return {
+            metrics = {
                 "auc": auc,
                 "accuracy": accuracy,
                 "f1": f1,
@@ -194,6 +210,18 @@ class LMKTModel(torch.nn.Module):
                 "n_seen": len(seen_labels),
                 "n_unseen": len(unseen_labels)
             }
+
+            if return_detailed:
+                metrics["preds"] = np.asarray(all_preds_y, dtype=np.float64)
+                metrics["preds_n"] = np.asarray(all_preds_n, dtype=np.float64)
+                metrics["pred_labels"] = pred_labels
+                metrics["targets"] = labels
+                metrics["seen"] = np.asarray(all_seen_mask, dtype=bool)
+                metrics["uid"] = np.asarray(det_uids, dtype=object)
+                metrics["target_pos"] = np.asarray(det_target_pos, dtype=np.int64)
+                metrics["prompt_text"] = np.asarray(det_prompt_texts, dtype=object)
+
+            return metrics
 
 # ===== QUESTION GENERATION FUNCTIONS for LMKT
 

@@ -1,4 +1,3 @@
-from numpy import record
 from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
 import logging
 import argparse
@@ -9,6 +8,7 @@ from tqdm import tqdm
 from db.log_db import MetricRecord
 from models.modular_qg.lmkt.lmkt import LMKTModel
 from pipelines.common.checkpointing import load_torch_ckpt, save_torch
+from pipelines.common.evaluation import save_binary_eval_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +74,15 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
         loss = model.train_one_epoch(lmkt_data.train_dataloader, opt)
         logger.info(f"Epoch {epoch} loss: {loss}")
 
-        if epoch % eval_every == 0:
+        if epoch == EPOCHS or epoch % eval_every == 0:
             metrics = model.evaluate_metrics(
                 lmkt_data.eval_histories, 
                 lmkt_data.pref_ns,
                 lmkt_data.train_seen_prompts,
+                return_detailed=True,
             )
             
-            logger.info("Epoch %d | AUC=%.5f | AUC (seen)=%.5f | AUC (unseen)=%.5f | Accuracy=%.5f | F1=%.5f",
+            logger.info("Epoch %d | AUC=%.5f | AUC (seen)=%s | AUC (unseen)=%s | Accuracy=%.5f | F1=%.5f",
                         epoch, metrics["auc"], metrics["auc_seen"], metrics["auc_unseen"], metrics["accuracy"], metrics["f1"])
 
             rec = MetricRecord(
@@ -99,6 +100,21 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
                 tag=tag,
             )
             records.append(rec)
+
+            pred_path = save_binary_eval_predictions(
+                rec,
+                y_true=metrics["targets"],
+                probs=metrics["preds"],
+                pred_labels=metrics["pred_labels"],
+                extra_cols={
+                    "prob_n": metrics["preds_n"],
+                    "seen": metrics["seen"].astype(np.int8),
+                    "uid": metrics["uid"],
+                    "target_pos": metrics["target_pos"],
+                    "prompt_text": metrics["prompt_text"],
+                },
+            )
+            logger.info(f"Saved evaluation predictions to {pred_path}")
 
             if save_every and epoch % save_every == 0 or epoch == EPOCHS:
                 save_path = save_torch(model, opt, rec)
