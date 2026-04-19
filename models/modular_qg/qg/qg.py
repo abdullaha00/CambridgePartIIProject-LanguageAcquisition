@@ -124,9 +124,9 @@ class LMKTQG(nn.Module):
         target_diff: float,
         num_gen_seqs: int = 30,
         max_new_toks: int = 50,
-        temperature: float = 1.0,
-        repitition_penalty: float = 1.0,
-        top_k: int = 0,
+        temperature: float = 0.8,
+        repetition_penalty: float = 0.5,
+        top_k: int = 20,
         top_p: float = 0.9
     ):
         """
@@ -164,7 +164,7 @@ class LMKTQG(nn.Module):
                 num_seqs=batch_size,
                 max_new_toks=max_new_toks,
                 temperature=temperature,
-                repitition_penalty=repitition_penalty,
+                repetition_penalty=repetition_penalty,
                 top_k=top_k,
                 top_p=top_p
             )
@@ -185,7 +185,7 @@ class LMKTQG(nn.Module):
         num_seqs: int,
         max_new_toks: int,
         temperature: float,
-        repitition_penalty: float,
+        repetition_penalty: float,
         top_k: int,
         top_p: float = 0.99
     ) -> List[str]:
@@ -222,7 +222,7 @@ class LMKTQG(nn.Module):
         assert tok.eos_token_id == self.tokenizer.convert_tokens_to_ids(TOK_EOS), "EOS token ID mismatch"
         assert tok.pad_token_id == self.tokenizer.convert_tokens_to_ids(TOK_PAD), "PAD token ID mismatch"
 
-        generated_ids = []  # collects (S, max_new_toks)
+        generated_ids = []  # collects elements of (S, max_new_toks)
         finished = torch.zeros(num_seqs, dtype=torch.bool, device=dev)  # (S,)
 
         past_key_values = None
@@ -239,21 +239,37 @@ class LMKTQG(nn.Module):
             past_key_values = outputs.past_key_values  # faster generation
             next_tok_logits = outputs.logits[:, -1, :]  # (S, V)
             
-            # sApply temp
+            # Apply temp
             if temperature != 1.0:
                 next_tok_logits = next_tok_logits / temperature
             
-            # Apply repitition penalty to discourage exact repetition of prompt tokens
-            if repitition_penalty != 1.0:
+            # Apply repetition penalty to discourage exact repetition of prompt tokens
+            if repetition_penalty != 1.0:
                 if generated_ids:
-                    gen_ids = torch.stack(generated_ids, dim=1)
-                    prev_tokens = torch.cat([prompt_tok_hist,], dim=1)  # (S, T+gen_len)
+                    gen_ids = torch.stack(generated_ids, dim=1) # (S, gen_len)
+                    prev_tokens = torch.cat([prompt_tok_hist, gen_ids], dim=1) # (S, T + gen_len)
+                else:
+                    prev_tokens = prompt_tok_hist
+
+                # get the current logits of previous token
+                prev_tok_scores = torch.gather(next_tok_logits, dim=1, index=prev_tokens)
+                prev_tok_scores = torch.where(
+                    prev_tok_scores < 0,
+                    prev_tok_scores * repetition_penalty,
+                    prev_tok_scores / repetition_penalty,
+                )
+
+                #next_tok_logits[i, prev_tokens[i, j]] = prev_tok_logits[i, j]
+                next_tok_logits.scatter_(dim=1, index=prev_tokens, src=prev_tok_scores)
 
             # Top-k filtering
-            if top_k > 0:
-                vals, _ = next_tok_logits < torch.topk(next_tok_logits, top_k)
-                threshold = vals[:, -1].squeeze(-1) # (B, 1) for the top kth value
-                next_tok_logits[next_tok_logits < threshold] = -float('inf')
+
+            S,V = next_tok_logits.shape
+
+            if 0 < top_k < V:
+                topk_vals, _ = torch.topk(next_tok_logits, top_k, dim=-1) # (S, top_k)
+                threshold = topk_vals[:, -1].unsqueeze(-1) # (S, 1) the lowest logit in the top-k (cutoff val)
+                next_tok_logits = next_tok_logits.masked_fill(next_tok_logits < threshold, -float('inf'))
             
             # Nucelus filtering
             # We select the smallest set of tokens whose cumulative probability mass exceeds top_p
@@ -294,9 +310,7 @@ class LMKTQG(nn.Module):
             current_embs = wte(next_tok_ids.unsqueeze(1))  # (S, 1, E)
             attention_mask = torch.cat([attention_mask, torch.ones((num_seqs, 1), device=dev)], dim=1)  # (S, step+1)
 
-        if not generated_ids:
-            assert False, "No tokens were generated. Check if the model can generate any tokens given the prompt."
-            return [""] * num_seqs 
+        assert generated_ids, "No tokens were generated. Check if the model can generate any tokens given prompt."
         
         gen_tensor = torch.stack(generated_ids, dim=1)  # (S, gen_len)
 
