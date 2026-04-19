@@ -70,7 +70,7 @@ class QGDataset:
             prefix_texts = []
             
             for q_text in sampled_qs:
-                full_prompt = f"{pref_text}{TOK_Q}{q_text}{TOK_A}"
+                full_prompt = f"{pref_text} {TOK_Q} {q_text} {TOK_A}".strip()
                 full_prompt = resize_prompt(full_prompt)
 
                 last_q = full_prompt.rfind(TOK_Q)
@@ -89,7 +89,7 @@ class QGDataset:
                 p_y = math.floor(diff.item() * 1000) / 1000  # format to 3 decimal places
                 scaled_diff = p_y * 100 # scale up
 
-                target_text = f"{TOK_G}{q_text}{TOK_EOS}"
+                target_text = f"{TOK_G} {q_text} {TOK_EOS}"
                 target_enc = tokenizer.encode(target_text, add_special_tokens=False, truncation=False)
 
                 prefix_enc = tokenizer.encode(pref_text, add_special_tokens=False, truncation=False)
@@ -147,4 +147,3 @@ def qg_collate(batch: List[QGExample], pad_token_id: int) -> Dict[str, torch.Ten
         "labels": labels,
         "difficulty": difficulties,
     }
-

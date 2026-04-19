@@ -62,10 +62,10 @@ def history_text(history: Sequence[Tuple[str, int]]) -> str:
     (prompt, correct01) -> <BOS> <Q> prompt <A> <Y/N> <Q> prompt <A> <Y/N> ...
 
     """
-    
-    out = []
+    assert history
 
+    out = []
     for text, correct in history:
-        out.append(f"{TOK_Q}{text}{TOK_A}{TOK_Y if correct == 1 else TOK_N}")
-    body = "".join(out)
-    return f"{TOK_BOS}{body}"
+        out.append(f"{TOK_Q} {text} {TOK_A} {TOK_Y if correct == 1 else TOK_N}")
+    body = " ".join(out)
+    return f"{TOK_BOS} {body}".strip()
