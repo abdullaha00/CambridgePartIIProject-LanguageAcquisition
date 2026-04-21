@@ -34,7 +34,8 @@ class SDKTModel(nn.Module):
         # ENCODER:
         # Input: [t, a, f] tok, ans, one embedding per feature
         
-        enc_input_dim = emb_dim + emb_dim + total_meta * meta_emb_dim # [t, a, f] tok, ans, one embedding per feature
+        enc_input_dim = emb_dim + emb_dim  # [q_t, a_t]
+
         self.encoder_bilstm = nn.LSTM(
             input_size=enc_input_dim,
             hidden_size=hid_dim,
@@ -88,15 +89,13 @@ class SDKTModel(nn.Module):
         self,
         q_ids: torch.Tensor, # (B, T)
         a_ids: torch.Tensor, # (B, T)
-        meta_dict: dict[str, torch.Tensor], # dict of (B, T)
         mask: torch.Tensor # (B, T)
     ) -> tuple[torch.Tensor, torch.Tensor]:
         
         t_emb = self.t_emb(q_ids) # (B, T, emb_dim)
         a_emb = self.a_emb(a_ids) # (B, T, emb_dim)
-        m_emb = self.embed_meta(meta_dict) # (B, T, total_meta_emb_dim)
 
-        x = torch.cat([t_emb, a_emb, m_emb], dim=-1) # (B, T, enc_input_dim)
+        x = torch.cat([t_emb, a_emb], dim=-1) # (B, T, enc_input_dim)
         x = self.dropout(x)
 
         T_batch = mask.sum(dim=1) # (B,)
@@ -167,7 +166,6 @@ class SDKTModel(nn.Module):
         enc_state = self.encode(
             q_ids=batch_data["enc_q"],
             a_ids=batch_data["enc_a"],
-            meta_dict=batch_data["enc_m"],
             mask=batch_data["enc_mask"]
         )
 
@@ -193,13 +191,16 @@ class SDKTModel(nn.Module):
 
         return F.binary_cross_entropy(preds[mask], targets[mask].float())
 
-    def evaluate(self, dl, teacher_forcing=True, return_detailed: bool = False) -> dict[str, float]:
+    def evaluate(self, dl, teacher_forcing=False, return_detailed: bool = False) -> dict[str, float]:
         self.eval()
         all_preds = []
         all_targets = []
         det_uids = []
         det_tok_ids = []
         det_target_pos = []
+
+        if teacher_forcing:
+            logger.info("Evaluating with teacher forcing!")
 
         for batch in dl:
             # Move batch to device

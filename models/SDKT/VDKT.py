@@ -1,10 +1,15 @@
 from typing import Tuple
 
 from torch import nn
+import logging
 import torch
 import torch.nn.functional as F
 import numpy as np
 from models.SDKT.SDKT import SDKTModel
+from models.utils import compute_metrics
+
+logger = logging.getLogger(__name__)
+
 class VDKTModel(SDKTModel):
     def __init__(self, 
         num_toks, 
@@ -29,14 +34,27 @@ class VDKTModel(SDKTModel):
             emb_matrix=emb_matrix
         )
 
-        self.prior_mean = nn.Linear(self.pred_input_dim, latent_dim)
-        self.prior_logvar = nn.Linear(self.pred_input_dim, latent_dim)
+        self.prior_mean = nn.Sequential(
+            nn.Linear(self.pred_input_dim, latent_dim),
+            nn.Tanh(),
+        )
+        self.prior_logvar = nn.Sequential(
+            nn.Linear(self.pred_input_dim, latent_dim),
+            nn.Tanh(),
+        )
 
-        self.posterior_mean = nn.Linear(self.pred_input_dim + emb_dim, latent_dim)
-        self.posterior_logvar = nn.Linear(self.pred_input_dim + emb_dim, latent_dim)
+        self.posterior_mean = nn.Sequential(
+            nn.Linear(self.pred_input_dim + emb_dim, latent_dim),
+            nn.Tanh(),
+        )
+        self.posterior_logvar = nn.Sequential(
+            nn.Linear(self.pred_input_dim + emb_dim, latent_dim),
+            nn.Tanh(),
+        )
 
         self.vpred_layer = nn.Sequential(
             nn.Linear(self.pred_input_dim + latent_dim, hid_dim),
+            nn.Tanh(),
             nn.Dropout(dropout),
             nn.Linear(hid_dim, 1)
         )
@@ -133,7 +151,6 @@ class VDKTModel(SDKTModel):
         enc_h, enc_c = self.encode(
             q_ids=batch_data["enc_q"],
             a_ids=batch_data["enc_a"],
-            meta_dict=batch_data["enc_m"],
             mask=batch_data["enc_mask"]
         )
 
@@ -161,6 +178,81 @@ class VDKTModel(SDKTModel):
     def forward(self, batch_data: dict, teacher_forcing: bool = True):
         preds, targets, mask, _ = self.forward_vdkt(batch_data, teacher_forcing)
         return preds, targets, mask
+
+    def evaluate(
+        self,
+        dl,
+        teacher_forcing: bool = False,
+        return_detailed: bool = False,
+        num_samples: int = 10,
+    ) -> dict[str, float]:
+        
+        
+        assert num_samples > 0, "num_samples must be positive"
+
+        self.eval()
+
+        all_preds = []
+        all_targets = []
+        det_uids = []
+        det_tok_ids = []
+        det_target_pos = []
+
+        if teacher_forcing:
+            logger.info("Evaluating VDKT with teacher forcing!")
+
+        # WE SAMPLE MULTIPLE TIMES
+
+        for batch in dl:
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else
+                {k2: v2.to(self.device) for k2, v2 in v.items()} if isinstance(v, dict) else
+                v for k, v in batch.items()
+            }
+
+            with torch.no_grad():
+                # accumulate num_samples of these
+                preds = []
+
+                for _ in range(num_samples):
+                    preds_i, targets, mask = self(batch, teacher_forcing=teacher_forcing)
+                    preds.append(preds_i)
+
+                # targets, mask is equal across samples, so use last
+                assert targets is not None and mask is not None
+
+                # average preds across samples
+                preds = torch.stack(preds, dim=0).mean(dim=0)
+                
+                assert preds.shape == targets.shape == mask.shape, "shape mismatch"
+                assert mask.sum() > 0, "mask has no vaild pos"
+
+                all_preds.append(preds[mask].cpu())
+                all_targets.append(targets[mask].cpu())
+
+                if return_detailed:
+                    for uid, tok_ids, target_pos in zip(
+                        batch["uid"],
+                        batch["dec_tok_id"],
+                        batch["dec_target_pos"],
+                    ):
+                        det_uids.extend([uid] * len(tok_ids))
+                        det_tok_ids.extend(tok_ids.tolist())
+                        det_target_pos.extend(target_pos.tolist())
+
+        p = torch.cat(all_preds, dim=0)
+        t = torch.cat(all_targets, dim=0)
+
+        metrics = compute_metrics(p.numpy(), t.numpy())
+
+        if return_detailed:
+            metrics["preds"] = p.numpy()
+            metrics["targets"] = t.numpy()
+            metrics["uid"] = np.asarray(det_uids)
+            metrics["tok_id"] = np.asarray(det_tok_ids)
+            metrics["target_pos"] = np.asarray(det_target_pos)
+
+        return metrics
 
     def elbo_loss(self, preds, targets, mask, kl_loss, weight):
         recons = F.binary_cross_entropy(preds[mask].float(), targets[mask].float())

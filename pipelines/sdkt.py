@@ -166,7 +166,19 @@ def run_sdkt_pipeline(
         logger.info(f"Epoch {epoch} - Train Loss: {avg_loss:.4f}")
 
         if epoch == EPOCHS or epoch % eval_every == 0:
-            metrics = model.evaluate(data_bundle.eval_dl, return_detailed=True)
+            if model_name == "vdkt":
+                metrics = model.evaluate(
+                    data_bundle.eval_dl,
+                    teacher_forcing=False,
+                    return_detailed=True,
+                    num_samples=10,
+                )
+            else:
+                metrics = model.evaluate(
+                    data_bundle.eval_dl,
+                    teacher_forcing=False,
+                    return_detailed=True,
+                )
             logger.info(
                 "Epoch %d - Eval Metrics: AUC=%.5f | Accuracy=%.5f | F1=%.5f",
                 epoch,
