@@ -3,7 +3,7 @@ import lightgbm as lgb
 import pandas as pd
 from sklearn.metrics import f1_score, roc_auc_score
 from models.gbdt.params import NYU_LGBM_PARAMS
-from models.gbdt.utils import prepare_xy_lightgbm
+from models.gbdt.utils import prepare_xy_lightgbm, sanitise_lightgbm_feature_names
 from tqdm.auto import tqdm
 import logging
 
@@ -74,6 +74,8 @@ class GBDTModel:
         assert self.feat_cols is not None, "Feature columns not set. Call fit() before predict_proba()."
         assert self.cat_cols is not None, "Categorical columns not set. Call fit() before predict_proba()."
         assert self.cat_categories is not None, "Categorical categories not set. Call fit() before predict_proba()."
+
+        X = sanitise_lightgbm_feature_names(X)
 
         # ensure all features are present in the input, and in the same order as during training
         X = X.reindex(columns=self.feat_cols, fill_value=0)

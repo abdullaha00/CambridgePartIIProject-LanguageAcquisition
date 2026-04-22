@@ -103,7 +103,7 @@ LESIONS = {
     "user_other": ["user_other"],
     "user": ["user_id", "user_other"],
 
-    "temporal": ["temporal_exact", "temporal_err"],
+    "temporal": ["temporal_exact", "temporal_prefixes"],
 
     "exercise": ["exercise"],
 }

@@ -54,7 +54,7 @@ def parse_gdbt_args(gdbt_args=None):
                    help="Disable saving computed features for disk when full dataset is used" \
                    "(smaller subsets are never saved)")
     p.add_argument("--clean-build", action="store_true", 
-                   help="Force clean feature build by ignoring existing parquet files", default=True)
+                   help="Force clean feature build by ignoring existing parquet files", default=False)
     p.add_argument("--lesion", type=str, default=None, choices = list(LESIONS.keys()), help="Lesion to apply to featureset")
 
 
