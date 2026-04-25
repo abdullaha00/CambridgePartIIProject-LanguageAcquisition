@@ -13,10 +13,20 @@ logger = logging.getLogger(__name__)
 
 def combine_probs(p_tr, p_all, alpha=0.5):
 
+    # === clipping
+    p_tr = np.asarray(p_tr, dtype=np.float64)
+    p_all = np.asarray(p_all, dtype=np.float64)
+
+    eps = 1e-6
+    p_tr = np.clip(p_tr, eps, 1 - eps)
+    p_all = np.clip(p_all, eps, 1 - eps)
+
+    # === combine
     logit = lambda p: np.log(p / (1 - p))
     inv_logit = lambda l: 1 / (1 + np.exp(-l))
 
-    return inv_logit(alpha * logit(p_tr) + (1 - alpha) * logit(p_all))
+    out = inv_logit(alpha * logit(p_tr) + (1 - alpha) * logit(p_all))
+    return np.clip(out, eps, 1 - eps)
 
 @dataclass(frozen=True)
 class EnsembleOutputs:
