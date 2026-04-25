@@ -89,7 +89,7 @@ def load_fasttext_vecs(
             matched += 1
         elif ft is not None and word in ft:
             vec = emb_dict[word]
-            assert emb_matrix[idx].shape == (emb_dim,), \
+            assert vec.shape == (emb_dim,), \
             f"Cached vector for '{word}' has shape {emb_matrix[idx].shape}, expected {(emb_dim,)}"
             
             emb_matrix[idx] = vec
