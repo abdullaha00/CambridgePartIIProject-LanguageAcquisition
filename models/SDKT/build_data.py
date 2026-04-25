@@ -6,7 +6,8 @@ from models.SDKT.data import SDKTEvalDataset, SDKTTrainDataset, SDKTVocabs, buil
 from torch.utils.data import DataLoader
 logger = logging.getLogger(__name__)
 
-META_COLS = ["user_id", "countries", "deprel", "pos", "meta", "format", "session", "client"]
+ITEM_COL = "tok"
+META_COLS = ["user_id", "countries", "deprel", "pos", "meta", "format", "session", "client", "rt"]
 
 @dataclass(frozen=True)
 class SDKTDataBundle:
@@ -22,15 +23,15 @@ def build_sdkt_dataloaders(track, variant, subset, train_with_dev, batch_size=32
 
     # build vocabs from training data only
 
-    token_vocab = build_vocab(df_train['lemma'])
+    token_vocab = build_vocab(df_train[ITEM_COL])
     meta_vocabs = build_meta_vocabs(df_train, META_COLS)
 
     sdkt_vocabs = SDKTVocabs(token_vocab=token_vocab, meta_vocabs=meta_vocabs)
 
     logger.info(f"SDKT vocabs built: token_vocab_size={len(token_vocab)}, meta_vocabs_sizes={dict((col, len(vocab)) for col, vocab in meta_vocabs.items())}")
 
-    train_seqs = build_user_sequences(df_train, token_vocab, meta_vocabs)
-    eval_seqs = build_user_sequences(df_eval, token_vocab, meta_vocabs)
+    train_seqs = build_user_sequences(df_train, token_vocab, meta_vocabs, item_col=ITEM_COL)
+    eval_seqs = build_user_sequences(df_eval, token_vocab, meta_vocabs, item_col=ITEM_COL)
 
     train_ds = SDKTTrainDataset(train_seqs)
     eval_ds = SDKTEvalDataset(train_seqs, eval_seqs)

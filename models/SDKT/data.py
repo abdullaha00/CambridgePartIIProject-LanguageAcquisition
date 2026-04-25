@@ -39,6 +39,7 @@ def build_user_sequences(
     df: pd.DataFrame,
     token_vocab: dict[str, int],
     meta_vocabs: dict[str, dict[str, int]],
+    item_col: str,
 ) -> dict[str, tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, np.ndarray]]:
 
     user_seqs = {}
@@ -47,10 +48,12 @@ def build_user_sequences(
     for uid, df_u in df.groupby("user_id"):
 
         
-        lemma_seq = (df_u["lemma"]
-                     .map(token_vocab)
-                     .fillna(unk_tok_id)
-                     .to_numpy(dtype=np.int64))
+        item_seq = (
+            df_u[item_col]
+            .map(token_vocab)
+            .fillna(unk_tok_id)
+            .to_numpy(dtype=np.int64)
+        )
         
         
         label_seq = df_u["label"].to_numpy()
@@ -67,7 +70,7 @@ def build_user_sequences(
                 to_numpy(dtype=np.int64)
                 )
         
-        user_seqs[uid] = (lemma_seq, meta_ids, label_seq, tok_id_seq)
+        user_seqs[uid] = (item_seq, meta_ids, label_seq, tok_id_seq)
 
     return user_seqs
 
