@@ -13,17 +13,17 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-# def parse_dkt_args(dkt_args=None):
-#     # PARSE DKT SPECIFIC FLAGS
-#     p = argparse.ArgumentParser(description="DKT Pipeline Args")    
-#     args = p.parse_args(dkt_args)
-#     return args
+def parse_dkt_args(dkt_args=None):
+    p = argparse.ArgumentParser(description="DKT Pipeline Args")
+    p.add_argument("--slam-eval", action="store_true", default=False)
+    return p.parse_args(dkt_args)
     
 def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag, save_every: int | None, resume_from: str | None):
 
-    # dkt_args = parse_dkt_args(next_args)
+    dkt_args = parse_dkt_args(next_args)
 
     logger.info(f"Running DKT pipeline for model {model_name}")
+    logger.info(f"Running DKT with args: {dkt_args}")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
 
@@ -85,7 +85,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
         #==== Evaluate
 
         if epoch == epochs or epoch % eval_every == 0:
-            metrics = model.evaluate_metrics(dkt_data.eval_dataset, return_detailed=True)
+            metrics = model.evaluate_metrics(dkt_data.eval_dataset, teacher_forcing= not dkt_args.slam_eval, return_detailed=True)
             logger.info(
                 "Test Metrics | AUC=%s | AUC (seen)=%s | AUC (unseen)=%s | Accuracy=%.5f | F1=%.5f | n_seen=%d | n_unseen=%d",
                 metrics["auc"],

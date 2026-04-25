@@ -27,7 +27,7 @@ def move_batch_to_device(batch: dict, device: torch.device) -> dict:
 def parse_sdkt_args(sdkt_args=None):
     p = argparse.ArgumentParser(description="seqDKT Pipeline Args")
     p.add_argument("--variant", type=str, default="reprocessed")
-    p.add_argument("--eval-teacher-forcing", action="store_true", default=False)
+    p.add_argument("--slam-eval", action="store_true", default=False)
     p.add_argument("--emb-dim", type=int, default=300)
     p.add_argument("--hid-dim", type=int, default=128)
     p.add_argument("--meta-emb-dim", type=int, default=64)
@@ -170,14 +170,14 @@ def run_sdkt_pipeline(
             if model_name == "vdkt":
                 metrics = model.evaluate(
                     data_bundle.eval_dl,
-                    teacher_forcing=sdkt_args.eval_teacher_forcing,
+                    teacher_forcing=not sdkt_args.slam_eval,
                     return_detailed=True,
                     num_samples=10,
                 )
             else:
                 metrics = model.evaluate(
                     data_bundle.eval_dl,
-                    teacher_forcing=sdkt_args.eval_teacher_forcing,
+                    teacher_forcing=not sdkt_args.slam_eval,
                     return_detailed=True,
                 )
             logger.info(

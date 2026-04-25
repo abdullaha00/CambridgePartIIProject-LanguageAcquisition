@@ -23,9 +23,7 @@ class DKTBase(nn.Module):
     def encode_input(self, q_ids, correct_list) -> torch.Tensor:
         raise NotImplementedError
 
-    def forward(self, q_ids, correct_list) -> torch.Tensor:
-        # Map questions to embeddings
-        
+    def forward(self, q_ids, correct_list) -> torch.Tensor:        
         # encodes what kind of update it should apply to learner state
         
         emb = self.encode_input(q_ids, correct_list) # (B, T, emb_dim)
@@ -82,7 +80,44 @@ class DKTBase(nn.Module):
         
         return total / n
             
-    def evaluate_metrics(self, dl: DataLoader, return_detailed: bool = False) -> float:
+    def next_probs_tf(
+        self,
+        Q: torch.Tensor,
+        A: torch.Tensor,
+        pref_lens: torch.Tensor,
+    ) -> torch.Tensor:
+        
+        B, T = Q.shape
+
+        # == feed own predictions
+        probs = torch.zeros((B, T - 1), device=self.device, dtype=torch.float32)
+
+        pred_a = A[:, 0].clone()
+        h_state = None
+        c_state = None
+
+        for t in range(T - 1):
+            x_t = self.encode_input(Q[:, t], pred_a).unsqueeze(1) # (B, 1, emb_dim)
+
+            if h_state is None:
+                out_t, (h_state, c_state) = self.rnn(x_t) # first state
+            else:
+                out_t, (h_state, c_state) = self.rnn(x_t, (h_state, c_state)) # following states
+
+            p_next = self.predict_next(out_t, Q[:, t + 1].unsqueeze(1)).squeeze(1) # (B, 1) -> (B,)
+
+            probs[:, t] = p_next
+
+            pred_next = (p_next>=0.5).long()
+            true_next = A[:, t+1]
+
+            # use gold labels during prefix only
+            use_true = (t + 1) < pref_lens
+            pred_a = torch.where(use_true, true_next, pred_next)
+
+        return probs
+
+    def evaluate_metrics(self, dl: DataLoader, teacher_forcing: bool, return_detailed: bool = False) -> float:
         self.eval()
 
         all_preds = []
@@ -102,10 +137,15 @@ class DKTBase(nn.Module):
 
                 B, T = Q.size()
 
-                Q_in, A_in = Q[:, :-1], A[:, :-1] # [q_0, q_1, ..., q_{T-2}], [a_0, a_1, ..., a_{T-2}]
+                if teacher_forcing:
 
-                h = self(Q_in, A_in) # (B, T-1, H) for states (s_0, s_1, ..., s_{T-2}) after observing q_i
-                probs = self.predict_next(h, Q[:, 1:])
+                    Q_in, A_in = Q[:, :-1], A[:, :-1] # [q_0, q_1, ..., q_{T-2}], [a_0, a_1, ..., a_{T-2}]
+
+                    h = self(Q_in, A_in) # (B, T-1, H) for states (s_0, s_1, ..., s_{T-2}) after observing q_i
+                    probs = self.predict_next(h, Q[:, 1:])
+                
+                else: 
+                    probs = self.next_probs_tf(Q, A, pref_lens)
 
                 targ_mask = mask[:, 1:].clone() # predicting A[:, 1:], so shift by 1
 
