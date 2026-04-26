@@ -87,17 +87,17 @@ def evaluate_diversity(
 
 def evaluate_novelty(
         generated_questions: List[str],
-        training_questions: List[str]
+        reference_questions: List[str]
 ) -> Dict[str, float]:
     """Evaluate novelty as the fraction of generated questions that do not appear
-    in training set using exact match, case insensitive
+    in reference question set using exact match, case insensitive
     """
 
     assert len(generated_questions) > 0, "No generated questions to evaluate novelty."
-    assert len(training_questions) > 0, "No training questions provided."
+    assert len(reference_questions) > 0, "No reference questions provided."
 
-    training_set = set(q.lower().strip() for q in training_questions)
-    novel_count = sum(1 for q in generated_questions if q.lower().strip() not in training_set)
+    reference_set = set(q.lower().strip() for q in reference_questions)
+    novel_count = sum(1 for q in generated_questions if q.lower().strip() not in reference_set)
 
     novelty_ratio = novel_count / len(generated_questions) if generated_questions else 0.0
 
@@ -106,40 +106,31 @@ def evaluate_novelty(
     }
 
 @torch.no_grad()
-def evaluate_perplexity(
-        generated_questions: List[str],
-        tokenizer,
-        lm_model,
-        max_length: int = 512
-):
-    """
-    Evaluate perplexity of generated questions using a frozen language model.
-    """
+def evaluate_qg_perplexity(qg_model, dataloader) -> Dict[str, float]:
+    """Evaluate QG perplexity from conditional QG loss on held-out examples."""
 
-    lm_model.eval()
-    # Use the inner HuggingFace model for perplexity (lm_model may be an LMKTModel wrapper)
-    hf_model = lm_model.model if hasattr(lm_model, 'model') else lm_model
+    qg_model.eval()
+    device = next(qg_model.parameters()).device
     total_loss = 0.0
     total_tokens = 0
 
-    for q_txt in generated_questions:
-        if not q_txt.strip():
-            logger.warning("Skipping empty question text for perplexity evaluation.")
-            continue
+    for batch in tqdm(dataloader, desc="Evaluating QG perplexity", leave=False):
+        batch = {k: v.to(device) for k, v in batch.items()}
         
-        input_toks = tokenizer(q_txt, return_tensors="pt", truncation=True, max_length=max_length) # (1, seq_len)
-        input_ids = input_toks["input_ids"].to(lm_model.device) # (1, seq_len)
-        if input_ids.size(1) <= 1:
-            logger.warning("Skipping single-token question for perplexity: '%s'", q_txt)
-            continue
-
-        outputs = hf_model(input_ids, labels=input_ids)
-        loss = outputs.loss.item()
-        total_loss += loss * input_ids.size(1)  # loss is averaged over tokens
-        total_tokens += input_ids.size(1) - 1  # we predict next token, so count is seq_len - 1
+        n_tokens = int((batch["labels"] != -100).sum().item())
+        assert n_tokens != 0, "No valid tokens in batch"
+        
+        out = qg_model(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            labels=batch["labels"],
+            difficulty=batch["difficulty"],
+        )
+        total_loss += out.loss.item() * n_tokens
+        total_tokens += n_tokens
     
     if total_tokens == 0:
-        logger.warning("No valid tokens for perplexity evaluation.")
+        logger.warning("No valid tokens for QG perplexity evaluation.")
         return {"perplexity": float("nan")}
     
     avg_loss = total_loss / total_tokens
@@ -162,7 +153,8 @@ def run_qg_evaluation(
     qg_model,
     lmkt_model,
     eval_histories: Dict[str, List[Tuple[str, int]]], 
-    train_questions: List[str], 
+    reference_questions: List[str],
+    qg_eval_dataloader: torch.utils.data.DataLoader,
     target_difficulties: List[float] =  np.linspace(0.1, 0.9, 9).tolist(),
     num_users: int = 50,
     num_samples_per_difficulty: int = 30,
@@ -195,7 +187,7 @@ def run_qg_evaluation(
         hist = eval_histories[uid]
         assert len(hist) > 0, f"User {uid} has empty history, skipping."
 
-        prefix_text = history_text(hist[:-1])  # structured prefix with <BOS> <Q> ... <A> <Y/N>
+        prefix_text = history_text(hist)  # structured prefix with <BOS> <Q> ... <A> <Y/N>
 
         for target_diff in target_difficulties:
             _gpu(qg_model)
@@ -248,10 +240,9 @@ def run_qg_evaluation(
 
     diff_metrics = evaluate_difficulty_targets(all_targ_diffs, all_achieved_diffs)
     diversity_metrics = evaluate_diversity(all_gens)
-    novelty_metrics = evaluate_novelty(all_gens, train_questions)
-    _gpu(lmkt_model)
-    perplexity_metrics = evaluate_perplexity(all_gens, qg_model.tokenizer, lmkt_model)
-    
+    novelty_metrics = evaluate_novelty(all_gens, reference_questions)
+    _gpu(qg_model)
+    perplexity_metrics = evaluate_qg_perplexity(qg_model, qg_eval_dataloader)
     _cpu(qg_model)
     _cpu(lmkt_model)
 
@@ -271,4 +262,3 @@ def run_qg_evaluation(
         logger.info(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
     return metrics
-

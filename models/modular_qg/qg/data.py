@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 import logging
 import math
-from random import random
-from typing import Callable, Dict, List, Tuple
+from typing import Dict, List, Tuple
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -37,8 +36,9 @@ class QGDataset:
     QG training examples are of the form:
     prefix + difficulty_val + <G> + <Q> question_text <A>
     where the difficulty assigned to question_text is computed by a frozen LMKTmodel,
-    prefix is sampled from held-out student histories (dev set), and question_text is held out
-    from the student's history used to train the LMKTmodel.
+    prefix is sampled from held-out student histories, and question_text is pooled from
+    held out set.
+
     """
     def __init__(
         self,
@@ -59,8 +59,10 @@ class QGDataset:
         unk = tokenizer.unk_token_id
         assert unk not in [g_id, self.y_id, self.n_id], f"Special tokens not found in tokenizer."
 
-        # chosen_qs = held_out_qs[:100]  # for now, limit to first 100 held-out questions
-        assert min_prefix_len > 1 and num_state_samples_per_user > 0 and num_questions_per_state > 0
+        assert (min_prefix_len >= 1 and 
+                num_state_samples_per_user >= 1
+                and num_questions_per_state >= 1
+                and len(held_out_qs) >= 1), "Invalid QGDataset parameters."
 
         self.examples: List[QGExample] = []
 
@@ -71,7 +73,10 @@ class QGDataset:
 
             max_prefix_len = len(hist)
 
-            assert len(held_out_qs) > 0, "No held-out questions available for QG examples."
+            if max_prefix_len < min_prefix_len:
+                logger.warning(f"Skipping user {_uid}: no next-question target is available.")
+                continue
+
             n_sample = min(len(held_out_qs), num_questions_per_state)
 
             for _ in range(num_state_samples_per_user):

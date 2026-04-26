@@ -124,7 +124,7 @@ elif MODEL == "lmkt":
 
 elif MODEL == "qg":
     records = run_qg_pipeline(
-        TRACK=TRACK,
+        track=TRACK,
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
         EPOCHS=EPOCHS,

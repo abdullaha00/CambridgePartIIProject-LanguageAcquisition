@@ -53,11 +53,12 @@ class LMKTQG(nn.Module):
         B, T = input_ids.shape
 
         #=== move to device
-        input_ids = input_ids.to(self.device)
-        attention_mask = attention_mask.to(self.device)
-        difficulty = difficulty.to(self.device)
+        dev = next(self.parameters()).device
+        input_ids = input_ids.to(dev)
+        attention_mask = attention_mask.to(dev)
+        difficulty = difficulty.to(dev)
         if labels is not None:
-            labels = labels.to(self.device)
+            labels = labels.to(dev)
         
         #=== token embds
         wte = self.model.get_input_embeddings()
@@ -123,17 +124,25 @@ class LMKTQG(nn.Module):
         history_prefix: str,
         target_diff: float,
         num_gen_seqs: int = 30,
-        max_new_toks: int = 50,
-        temperature: float = 0.8,
-        repetition_penalty: float = 0.5,
-        top_k: int = 20,
-        top_p: float = 0.9
+        max_new_toks: int = 20,
+        temperature: float = 1.0,
+        repetition_penalty: float = 1.0,
+        top_k: int = 0,
+        top_p: float = 0.99
     ):
         """
         We encode history + <G> as the prompt
-        We inhect difficulty before <G> as a scalar embedding
+        We inject difficulty before <G> as a scalar embedding
         We sample tokens after <G> until <EOS> or max length
         """
+
+        assert (
+            0.0 <= target_diff <= 1.0
+            and temperature > 0
+            and top_k >= 0
+            and 0.0 < top_p <= 1.0
+        ), "Invalid parameters."
+
         dev = next(self.parameters()).device  # Ensure generation happens on the same device as the model
 
         self.eval()
