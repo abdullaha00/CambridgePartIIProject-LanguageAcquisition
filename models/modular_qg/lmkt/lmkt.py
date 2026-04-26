@@ -247,9 +247,9 @@ class LMKTModel(torch.nn.Module):
                 logger.warning(f"Empty question_text passed to p_y_given_question")
             
             if hp and hp.strip():
-                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A}")
+                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A} ")
             else:
-                prompts.append(f"{TOK_BOS} {TOK_Q} {qt} {TOK_A}")
+                prompts.append(f"{TOK_BOS} {TOK_Q} {qt} {TOK_A} ")
         
         
         enc_out = tok(
