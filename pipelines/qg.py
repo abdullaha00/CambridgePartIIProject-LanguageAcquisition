@@ -1,7 +1,7 @@
 from functools import partial
 
 
-from data_processing.data_parquet import load_train_and_eval_df
+from data_processing.data_parquet import get_parquet
 from db.log_db import GenerationRecord
 from models.modular_qg.common.data import collapse_to_exercise, build_user_sequences_text, history_text
 from models.modular_qg.lmkt.build_data import build_lmkt_dataloaders
@@ -27,6 +27,19 @@ def parse_qg_args(qg_args=None):
     p.add_argument("-e", "--epochs", type=int, default=2)
     args = p.parse_args(qg_args)
     return args
+
+def get_reverse_translate_ex(track: str, split: str, subset=None, user_filter=None):
+    df = get_parquet(track, split, "minimal", subset=subset, user_filter=user_filter)
+    df_prompts = get_parquet(track, split, "prompt")
+
+    df = df[df["format"] == "reverse_translate"]
+    df_ex = collapse_to_exercise(df)
+    df_ex = df_ex.merge(df_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+
+    missing = df_ex["prompt"].isna().sum()
+    assert missing == 0, f"Missing prompts in {split} split after merge: {missing}"
+
+    return df_ex
 
 def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=None):
     
@@ -88,34 +101,35 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=No
     #============ BUILD QG
     logger.info("Building QG Model")
 
-    df_train, df_held = load_train_and_eval_df(TRACK, "minimal", train_with_dev, subset=SUBSET)
-    dft_prompts, dfh_prompts = load_train_and_eval_df(TRACK, "prompt", train_with_dev, subset=SUBSET)
+    df_lmkt_train_ex = get_reverse_translate_ex(TRACK, "train", subset=SUBSET)
+    train_users = df_lmkt_train_ex["user_id"].unique()
 
-    # Restrict to reverse_translate tasks
-    df_train = df_train[df_train["format"] == "reverse_translate"]
-    df_held = df_held[df_held["format"] == "reverse_translate"]
+    if train_with_dev:
+        logger.info("train-with-dev is default for QG!;" \
+        "Intended splits: LMKT_train: train, QG_train: dev", "QG_dev: test")
 
-    df_train_ex, df_held_ex = collapse_to_exercise(df_train), collapse_to_exercise(df_held)
+    qg_train_split = "dev"
+    qg_eval_split = "test"
 
-    # Merge prompt text into collapsed DataFrames
-    df_train_ex = df_train_ex.merge(dft_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
-    df_held_ex = df_held_ex.merge(dfh_prompts[["ex_key", "prompt"]], on="ex_key", how="left")
+    df_qg_train_ex = get_reverse_translate_ex(TRACK, qg_train_split, user_filter=train_users)
+    df_qg_eval_ex = get_reverse_translate_ex(TRACK, qg_eval_split, user_filter=train_users)
 
-    # ==== WE use df_held as a held-out set 
+    qg_train_histories = build_user_sequences_text(df_qg_train_ex)
+    qg_eval_histories = build_user_sequences_text(df_qg_eval_ex)
 
-    train_histories = build_user_sequences_text(df_train_ex)
-    held_histories = build_user_sequences_text(df_held_ex)
-
-    held_out_qs = df_held_ex["prompt"].unique().tolist()
+    held_out_qs = df_qg_train_ex["prompt"].unique().tolist() # used to train 
 
     # === LOGGING
-    train_users = set(df_train_ex["user_id"].unique())
-    held_users = set(df_held_ex["user_id"].unique())
+    qg_train_users = set(df_qg_train_ex["user_id"].unique())
+    qg_eval_users = set(df_qg_eval_ex["user_id"].unique())
     logger.info(
-        "QG held-out split=%s | held-out users=%d | overlap_with_lmkt_train=%d | held-out questions=%d",
-        "test" if train_with_dev else "dev",
-        len(held_users),
-        len(train_users & held_users),
+        "QG train split=%s | QG eval split=%s | QG train users=%d | QG eval users=%d | "
+        "overlap_with_lmkt_train=%d | held-out questions=%d",
+        qg_train_split,
+        qg_eval_split,
+        len(qg_train_users),
+        len(qg_eval_users),
+        len(set(train_users) & qg_train_users),
         len(held_out_qs),
     )
 
@@ -135,7 +149,7 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=No
     tok = qg_model.tokenizer
 
     qg_dataset = QGDataset(
-        histories=train_histories,
+        histories=qg_train_histories,
         held_out_qs=held_out_qs,
         tokenizer=tok,
         difficulty_fn=difficulty_fn
@@ -196,8 +210,8 @@ def run_qg_pipeline(TRACK,SUBSET,train_with_dev, EPOCHS, extra_args=None, tag=No
     qg_metrics = run_qg_evaluation(
         qg_model=qg_model,
         lmkt_model=model,
-        eval_histories=held_histories,
-        train_questions=df_train_ex["prompt"].unique().tolist(),
+        eval_histories=qg_eval_histories,
+        train_questions=df_lmkt_train_ex["prompt"].unique().tolist(),
     )
 
     logger.info("QG Evaluation | Diff MAE=%.4f | Diff Corr=%.4f | Distinct-1=%.4f | Distinct-2=%.4f | Novelty=%.4f | N=%d",
