@@ -20,6 +20,7 @@ from pipelines.dkt import run_dkt_pipeline
 from pipelines.aqg_kt import run_aqg_dkt_pipeline
 from pipelines.aqg_qg import run_aqg_qg_pipeline
 from pipelines.sdkt import run_sdkt_pipeline
+from pipelines.fa_bilstm import run_fa_bilstm_pipeline
 
 warnings.filterwarnings("ignore", message=".*loss_type.*")
 
@@ -41,7 +42,7 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 p = argparse.ArgumentParser()
 p.add_argument("model_name", 
-               choices=["lr", "gbdt", "dkt", "bert-dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg_dkt", "aqg_qg"],
+               choices=["lr", "gbdt", "dkt", "bert-dkt", "lmkt", "qg", "sdkt", "vdkt", "aqg-dkt", "aqg-qg", "fa-bilstm"],
                help="Which model to run")
 p.add_argument("-t", "--track", type=str, default="en_es", choices=["en_es", "fr_en", "es_en", "all"])
 p.add_argument("-d", "--train-with-dev", action="store_true", default=False)
@@ -139,6 +140,19 @@ elif MODEL == "sdkt" or MODEL == "vdkt":
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
         EPOCHS=EPOCHS,
+        eval_every=EVAL_EVERY,
+        next_args=next_args,
+        tag=args.tag,
+        save_every=args.save_every,
+        resume_from=args.resume,
+    )
+
+elif MODEL == "fa-bilstm":
+    records = run_fa_bilstm_pipeline(
+        track=TRACK,
+        subset=SUBSET,
+        train_with_dev=TRAIN_WITH_DEV,
+        epochs=EPOCHS,
         eval_every=EVAL_EVERY,
         next_args=next_args,
         tag=args.tag,

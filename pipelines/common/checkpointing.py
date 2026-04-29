@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-BASE_SAVE_DIR = Path("")
+BASE_SAVE_DIR = Path("/mnt/hdd/ntf_sdkt/")
 
 @dataclass(frozen=True)
 class RunKey:

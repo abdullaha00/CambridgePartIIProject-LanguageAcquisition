@@ -92,7 +92,7 @@ def load_train_and_eval_df_strict(track: str, variant: str, train_with_dev: bool
 
     df_train, df_eval = load_train_and_eval_df(track, variant, train_with_dev, subset=subset, columns=columns)
 
-    # PREVENT TEST-LEAKAGE: drop label column from eval df and store separately
+    # HELP MITIGATE TEST-LEAKAGE: drop label column from eval df and store separately
     eval_labels = df_eval["label"].values
     df_eval = df_eval.drop(columns=["label"])
 

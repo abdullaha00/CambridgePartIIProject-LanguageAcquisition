@@ -135,7 +135,7 @@ class SDKTEvalDataset(Dataset):
         }
     
 
-PAD_ID = 0
+SDKT_PAD_ID = 0
 
 def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     # batch is a list of dicts with keys: enc_q, enc_a, enc_m, dec_q, dec_a, dec_m
@@ -147,14 +147,14 @@ def collate_sdkt(batch: list[dict]) -> dict[str, torch.Tensor | dict[str, torch.
 
     m_keys = batch[0]["enc_m"].keys()
 
-    enc_q_batch = torch.full((B, Tmax_enc), PAD_ID, dtype=torch.long)
-    enc_a_batch = torch.full((B, Tmax_enc), PAD_ID, dtype=torch.long)
-    enc_m_batch = {col: torch.full((B, Tmax_enc), PAD_ID, dtype=torch.long) for col in m_keys}
+    enc_q_batch = torch.full((B, Tmax_enc), SDKT_PAD_ID, dtype=torch.long)
+    enc_a_batch = torch.full((B, Tmax_enc), SDKT_PAD_ID, dtype=torch.long)
+    enc_m_batch = {col: torch.full((B, Tmax_enc), SDKT_PAD_ID, dtype=torch.long) for col in m_keys}
     enc_mask_batch = torch.zeros((B, Tmax_enc), dtype=torch.bool)
 
-    dec_q_batch = torch.full((B, Tmax_dec), PAD_ID, dtype=torch.long)
-    dec_a_batch = torch.full((B, Tmax_dec), PAD_ID, dtype=torch.long)
-    dec_m_batch = {col: torch.full((B, Tmax_dec), PAD_ID, dtype=torch.long) for col in m_keys}
+    dec_q_batch = torch.full((B, Tmax_dec), SDKT_PAD_ID, dtype=torch.long)
+    dec_a_batch = torch.full((B, Tmax_dec), SDKT_PAD_ID, dtype=torch.long)
+    dec_m_batch = {col: torch.full((B, Tmax_dec), SDKT_PAD_ID, dtype=torch.long) for col in m_keys}
     dec_mask_batch = torch.zeros((B, Tmax_dec), dtype=torch.bool)
 
     enc_last_q_batch = torch.zeros(B, dtype=torch.long)
