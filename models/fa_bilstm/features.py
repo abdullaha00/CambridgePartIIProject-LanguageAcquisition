@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from .data import TOKEN_COL
+from .data import NA_VALUE, TOKEN_COL
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def metadata_invalid_mask(source_col: str, vals: pd.Series) -> pd.Series:
 
 
 def key(left: pd.Series, right: pd.Series) -> pd.Series:
-    return pd.Series(zip(left, right), index=left.index)
+    return left.astype("string").fillna(NA_VALUE) + "|" + right.astype("string").fillna(NA_VALUE)
 
 
 def add_positional_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
@@ -58,7 +58,7 @@ def add_positional_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -
         # == EXERCISE POS FEATS
 
         # np default is float64, switch to 32 to save memory
-        df["pos_ex_len_log"] = np.log(ex_len).astype(np.float32)
+        df["pos_ex_len_log"] = np.log1p(ex_len).astype(np.float32)
         df["pos_index_log"] = np.log(pos_in_ex).astype(np.float32)
         df["pos_from_end_log"] = np.log((ex_len - pos_in_ex + 1).clip(lower=0)).astype(np.float32)
         df["pos_rel"] = ((pos_in_ex - 1) / ((ex_len - 1)).clip(lower=1)).astype(np.float32)
@@ -98,8 +98,8 @@ def add_user_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame)
         #===== EVAL ROWS: no labels; just copy aggregate train data
         train_stats = df_train.groupby(train_key, sort=False)["label"].agg(["size", "sum"])
 
-        eval_counts = eval_key.map(train_stats["size"]).astype(np.float32)
-        eval_errors = eval_key.map(train_stats["sum"]).astype(np.float32)
+        eval_counts = eval_key.map(train_stats["size"]).fillna(0).astype(np.float32)
+        eval_errors = eval_key.map(train_stats["sum"]).fillna(0).astype(np.float32)
 
         #=====
         count_col = f"hist_{name}_log_count"
@@ -116,7 +116,7 @@ def add_user_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame)
 
 def add_global_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
 
-    #we group by col1, col2 and compute counts/errors
+    #we group by "col1|col2" and compute counts/errors
     
     global_train_label_mean = float(df_train["label"].mean())
 
@@ -170,12 +170,12 @@ def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> 
         for df in (df_train, df_eval):
             if source_col in df.columns:
                 vals = pd.to_numeric(df[source_col], errors="coerce")
-                missing = vals.isna() | metadata_invalid_mask(source_col, vals)
+                missing = vals.isna()
             else:
                 logger.warning(f"Source column {source_col} not found in dataframe; filling with zeros and marking all as missing")
                 vals = pd.Series(np.zeros(len(df), dtype=np.float32), index=df.index)
                 missing = pd.Series(np.ones(len(df), dtype=bool), index=df.index)
-            vals = vals.mask(missing, 0)
+            vals = vals.fillna(0).clip(lower=0)
 
             df[num_log_col] = np.log1p(vals).astype(np.float32)
             df[num_missing_col] = missing.astype(np.float32)

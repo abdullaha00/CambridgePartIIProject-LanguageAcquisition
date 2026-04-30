@@ -72,7 +72,7 @@ def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[st
     df = df.copy()
     assert {TOKEN_COL, "user_id", "tok_id", "label"}.issubset(df.columns), f"df is missing required columns: {df.columns}"
 
-    df["ex_key"] = df["tok_id"].str.slice(0, 10)
+    df["ex_key"] = df["tok_id"].astype("string").str.slice(0, 10)
     if "dep" not in df.columns:
         df["dep"] = df["deprel"] if "deprel" in df.columns else pd.NA
     if "countries" not in df.columns and "country" in df.columns:
@@ -90,7 +90,9 @@ def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[st
         else:
             df[col] = string_series(df[col])
 
-    assert not df["label"].isna().any(), "Labels has na values"
+    labels = pd.to_numeric(df["label"], errors="coerce")
+    assert not labels.isna().any(), "Labels has na values"
+    df["label"] = labels.astype(np.int64)
 
     return df
 
@@ -170,6 +172,5 @@ def build_fab_dataloaders(
     logger.info(f"FA_dataloaders: Built dataloaders with {len(train_dl)} train batches and {len(eval_dl)} eval batches")
 
     return FAData(train_dl=train_dl, eval_dl=eval_dl, vocabs=vocabs)
-
 
 

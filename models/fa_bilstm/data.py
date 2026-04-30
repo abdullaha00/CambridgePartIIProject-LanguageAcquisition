@@ -16,9 +16,8 @@ def string_series(series: pd.Series) -> pd.Series:
     return series.astype("string").fillna(NA_VALUE)
 
 def build_vocab(series: pd.Series) -> dict[str, int]:
-    tokens = string_series(series).unique()
-    token_vocab = {tok: idx + 2 for idx, tok in enumerate(tokens)} # 2 reserved for PAD and UNK
-    return token_vocab
+    tokens = string_series(series).drop_duplicates()
+    return {str(tok): idx + 2 for idx, tok in enumerate(tokens)} # 2 reserved for PAD and UNK
 
 @dataclass(frozen=True)
 class FAVocabs:
@@ -46,38 +45,69 @@ class FASequenceInstance:
     tok_ids: np.ndarray
     target_pos: np.ndarray
 
+class FASequenceDataset(Dataset):
+    def __init__(
+        self,
+        user_ids: np.ndarray,
+        ex_keys: np.ndarray,
+        starts: np.ndarray,
+        ends: np.ndarray,
+        token_ids: np.ndarray,
+        feature_ids: dict[str, np.ndarray],
+        numeric_features: dict[str, np.ndarray],
+        labels: np.ndarray,
+        tok_ids: np.ndarray,
+    ):
+        self.user_ids = user_ids
+        self.ex_keys = ex_keys
+        self.starts = starts
+        self.ends = ends
+        self.token_ids = token_ids
+        self.feature_ids = feature_ids
+        self.numeric_features = numeric_features
+        self.labels = labels
+        self.tok_ids = tok_ids
+
+    def __len__(self) -> int:
+        return len(self.starts)
+
+    def __getitem__(self, idx: int) -> FASequenceInstance:
+        start = self.starts[idx]
+        end = self.ends[idx]
+        return FASequenceInstance(
+            user_id=self.user_ids[start],
+            ex_key=self.ex_keys[start],
+            token_ids=self.token_ids[start:end],
+            feature_ids={feat: ids[start:end] for feat, ids in self.feature_ids.items()},
+            numeric_features={col: vals[start:end] for col, vals in self.numeric_features.items()},
+            labels=self.labels[start:end],
+            tok_ids=self.tok_ids[start:end],
+            target_pos=np.arange(end - start, dtype=np.int64),
+        )
+
 def build_encoded_sequences(
     df: pd.DataFrame,
     vocabs: FAVocabs
-) -> list[FASequenceInstance]:
+) -> FASequenceDataset:
 
-    sequences: list[FASequenceInstance] = []
+    ex_keys = df["ex_key"].to_numpy()
+    starts = np.where(np.r_[True, ex_keys[1:] != ex_keys[:-1]])[0].astype(np.int64)
+    ends = np.r_[starts[1:], len(df)].astype(np.int64)
 
-    for ex_key, group in df.groupby("ex_key", sort=False):
-        token_ids = string_series(group[TOKEN_COL]).map(vocabs.token_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
-        feature_ids = {
-            feat: string_series(group[feat]).map(feat_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
-            for feat, feat_vocab in vocabs.feature_vocabs.items()
-        }
-        numeric_features = {
-            col: group[col].fillna(0).astype(np.float32).to_numpy()
-            for col in vocabs.numeric_feature_cols
-        }
+    token_ids = string_series(df[TOKEN_COL]).map(vocabs.token_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
+    feature_ids = {
+        feat: string_series(df[feat]).map(feat_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
+        for feat, feat_vocab in vocabs.feature_vocabs.items()
+    }
+    numeric_features = {
+        col: df[col].fillna(0).astype(np.float32).to_numpy()
+        for col in vocabs.numeric_feature_cols
+    }
+    labels = df["label"].astype(np.int64).to_numpy()
+    tok_ids = df["tok_id"].to_numpy()
+    user_ids = df["user_id"].to_numpy()
 
-        sequences.append(
-            FASequenceInstance(
-                user_id=group["user_id"].iloc[0],
-                ex_key=ex_key,
-                token_ids=token_ids,
-                feature_ids=feature_ids,
-                numeric_features=numeric_features,
-                labels=group["label"].astype(np.int64).to_numpy(),
-                tok_ids=group["tok_id"].to_numpy(),
-                target_pos=np.arange(len(group), dtype=np.int64),
-            )
-        )
-
-    return sequences
+    return FASequenceDataset(user_ids, ex_keys, starts, ends, token_ids, feature_ids, numeric_features, labels, tok_ids)
 
 # ===== DATALOADERS
 
