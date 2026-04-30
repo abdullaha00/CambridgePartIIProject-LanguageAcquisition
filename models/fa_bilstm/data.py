@@ -12,8 +12,11 @@ UNK_ID = 1
 NA_VALUE = "<NA>"
 TOKEN_COL = "tok"
 
+def string_series(series: pd.Series) -> pd.Series:
+    return series.astype("string").fillna(NA_VALUE)
+
 def build_vocab(series: pd.Series) -> dict[str, int]:
-    tokens = series.unique()
+    tokens = string_series(series).unique()
     token_vocab = {tok: idx + 2 for idx, tok in enumerate(tokens)} # 2 reserved for PAD and UNK
     return token_vocab
 
@@ -51,9 +54,9 @@ def build_encoded_sequences(
     sequences: list[FASequenceInstance] = []
 
     for ex_key, group in df.groupby("ex_key", sort=False):
-        token_ids = group["tok"].map(vocabs.token_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
+        token_ids = string_series(group[TOKEN_COL]).map(vocabs.token_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
         feature_ids = {
-            feat: group[feat].map(feat_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
+            feat: string_series(group[feat]).map(feat_vocab).fillna(UNK_ID).astype(np.int64).to_numpy()
             for feat, feat_vocab in vocabs.feature_vocabs.items()
         }
         numeric_features = {

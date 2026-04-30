@@ -4,11 +4,27 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from models.fa_bilstm.data import FAVocabs
 from torch.utils.data import DataLoader
 
 from config.consts import TRACKS
 from data_processing.data_parquet import load_train_and_eval_df
+from models.fa_bilstm.data import (
+    NA_VALUE,
+    TOKEN_COL,
+    FAVocabs,
+    build_encoded_sequences,
+    build_vocab,
+    fab_collate_fn,
+    string_series,
+)
+from models.fa_bilstm.features import (
+    add_global_history_num_features,
+    add_metadata_num_features,
+    add_positional_num_features,
+    add_temporal_num_features,
+    add_user_history_num_features,
+    normalise_numeric_features as normalise_numeric_feature_frames,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +60,7 @@ def build_fab_dataloaders(
     normalise_numeric_features: bool = False,
 ) -> FAData:
     
-    assert feature_set in FEATURE_SETS
-    feature_cols = FEATURE_SETS[feature_set]
+    feature_cols = resolve_feature_set(feature_set)
 
     logger.info(f"FA_dataloaders: Loading data for track {track} with features {feature_cols}")
 
@@ -80,7 +95,7 @@ def build_fab_dataloaders(
     eval_encoded = build_encoded_sequences(df_eval, vocabs)
 
     train_dl = DataLoader(train_encoded, batch_size=batch_size, shuffle=shuffle_train, collate_fn=fab_collate_fn)
-    eval_dl = DataLoader(eval_encoded, batch_size=batch_size, shuffle=False)
+    eval_dl = DataLoader(eval_encoded, batch_size=batch_size, shuffle=False, collate_fn=fab_collate_fn)
 
     logger.info(f"FA_dataloaders: Built dataloaders with {len(train_dl)} train batches and {len(eval_dl)} eval batches")
 

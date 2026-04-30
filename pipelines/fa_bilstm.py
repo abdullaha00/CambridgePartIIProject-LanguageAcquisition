@@ -42,7 +42,7 @@ GRAD_CLIP = 5.0
 
 
 def parse_fab_args(sdkt_args=None):
-    p = argparse.ArgumentParser(description="seqDKT Pipeline Args")
+    p = argparse.ArgumentParser(description="FA-BiLSTM Pipeline Args")
     p.add_argument("--variant", type=str, default=DATA_VARIANT)
     p.add_argument("--feature-set", type=str, default=FEATURE_SET)
     p.add_argument("--emb-dim", type=int, default=TOKEN_EMB_DIM)
@@ -56,15 +56,28 @@ def parse_fab_args(sdkt_args=None):
     p.add_argument("--position-features", action="store_true", default=USE_POSITION_FEATURES)
     p.add_argument("--numeric-metadata", action="store_true", default=USE_NUMERIC_METADATA)
     p.add_argument("--normalize-numeric-features", action="store_true", default=NORMALIZE_NUMERIC_FEATURES)
+    p.add_argument("--no-progress", action="store_true")
     return p.parse_args(sdkt_args)
 
 
-def train_epoch(model, dataloader, opt, device, grad_clip=None):
+def move_batch_to_device(batch: dict, device: torch.device) -> dict:
+    out = {}
+    for key, value in batch.items():
+        if isinstance(value, torch.Tensor):
+            out[key] = value.to(device)
+        # handle dict of tensors (e.g. feat_ids)
+        elif isinstance(value, dict):
+            out[key] = {k: v.to(device) for k, v in value.items()}
+        else:
+            out[key] = value
+    return out
+
+def train_epoch(model, dataloader, opt, device, grad_clip=None, show_progress=True):
     model.train()
 
     sum_loss = 0.0
-    for batch in tqdm(dataloader, desc="Training", leave=False):
-        batch = {k: v.to(device) for k, v in batch.items()}
+    for batch in tqdm(dataloader, desc="Training", leave=False, disable=not show_progress):
+        batch = move_batch_to_device(batch, device)
         
         opt.zero_grad()
         loss = model.loss(batch)
@@ -77,28 +90,27 @@ def train_epoch(model, dataloader, opt, device, grad_clip=None):
 
     return sum_loss / max(len(dataloader), 1)
 
-def evaluate(model, dataloader, device) -> dict:
+def evaluate(model, dataloader, device, show_progress=True) -> dict:
     model.eval()
     all_probs = []
     all_labels = []
 
     detailed = {"user_id": [], "tok_id": [], "ex_key": [], "target_pos": []}
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating", leave=False):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            probs = model.predict(batch)
+        for batch in tqdm(dataloader, desc="Evaluating", leave=False, disable=not show_progress):
+            batch_device = move_batch_to_device(batch, device)
+            probs = model.predict(batch_device)
 
-            mask = batch["mask"]
+            mask = batch_device["mask"]
             all_probs.extend(probs[mask].cpu().numpy())
-            all_labels.extend(batch["labels"][mask].cpu().numpy())
-
-            # == DETAILED
-            for i, row_mask in enumerate(mask):
-                T = int(row_mask.sum())
-                detailed["user_id"].extend([batch["user_id"][i]] * T)
-                detailed["ex_key"].extend([batch["ex_key"][i]] * T)
-                detailed["tok_id"].extend(batch["tok_id"][i][:T].tolist())
-                detailed["target_pos"].extend(batch["target_pos"][i][:T].tolist())
+            all_labels.extend(batch_device["labels"][mask].cpu().numpy())
+        # === APPEND DETAILED INFO
+        for i, seq_mask in enumerate(mask):
+            T = int(seq_mask.sum().item())
+            detailed["user_id"].extend([batch["user_ids"][i]] * T)
+            detailed["ex_key"].extend([batch["ex_keys"][i]] * T)
+            detailed["tok_id"].extend(batch["tok_ids"][i][:T].tolist())
+            detailed["target_pos"].extend(batch["target_pos"][i][:T].tolist())
 
     probs_np = np.asarray(all_probs)
     labels_np = np.asarray(all_labels)
@@ -144,11 +156,11 @@ def run_fa_bilstm_pipeline(
     )
 
     #=== MODEL and opt
-    model = FABiLSTM(
-        token_vocab_size=data.vocabs.vocab_size,
-        feature_vocab_sizes=data.vocabs.feature_vocab_sizes,
-        token_emb_dim=args.emb_dim,
-        feature_emb_dim=args.meta_emb_dim,
+    model = FABModel(
+        tok_vocab_size=data.vocabs.vocab_size,
+        feat_vocab_sizes=data.vocabs.feature_vocab_sizes,
+        tok_emb_dim=args.emb_dim,
+        feat_emb_dim=args.meta_emb_dim,
         hidden_dim=args.hid_dim,
         num_layers=NUM_LAYERS,
         dropout=args.dropout,
@@ -159,7 +171,7 @@ def run_fa_bilstm_pipeline(
     )
 
     device = model.device
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=WEIGHT_DECAY)
 
     start_epoch = 1
     
@@ -187,22 +199,23 @@ def run_fa_bilstm_pipeline(
     #==
 
     records = []
+    rec_variant = f"fa_bilstm_{args.variant}_{args. feature_set.replace(',', '-')}"
 
     #==== TRAIN
     for epoch in range(start_epoch, epochs + 1):
-        loss = train_epoch(model, data.train_dl, opt, device, args.grad_clip)
+        loss = train_epoch(model, data.train_dl, opt, device, GRAD_CLIP, not args.no_progress)
         logger.info(f"Epoch {epoch} - Train Loss: {loss:.4f}")
         if epoch != epochs and epoch % eval_every != 0:
             continue
 
-        metrics = evaluate(model, data.eval_dl, device)
+        metrics = evaluate(model, data.eval_dl, device, not args.no_progress)
         logger.info("Epoch %d - Eval AUC=%.5f Accuracy=%.5f F1=%.5f", epoch, metrics["auc"], metrics["accuracy"], metrics["f1"])
         rec = MetricRecord(
-            model="fa_bilstm",
+            model="fa-bilstm",
             track=track,
             subset=subset,
             train_with_dev=train_with_dev,
-            variant=args.variant,
+            variant=rec_variant,
             epochs=epoch,
             auc=metrics["auc"],
             acc=metrics["accuracy"],
