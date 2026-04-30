@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from typing import Iterable
@@ -68,7 +70,7 @@ def resolve_feature_set(feature_set: str) -> tuple[str, ...]:
  
 def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[str], prefix_ids: bool) -> pd.DataFrame:
     df = df.copy()
-    assert {TOKEN_COL, "user_id", "ex_key"}.issubset(df.columns), f"df is missing required columns: {df.columns}"
+    assert {TOKEN_COL, "user_id", "tok_id", "label"}.issubset(df.columns), f"df is missing required columns: {df.columns}"
 
     df["ex_key"] = df["tok_id"].str.slice(0, 10)
     if "dep" not in df.columns:
@@ -78,7 +80,7 @@ def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[st
     if prefix_ids:
         df["track"] = track_name
         for col in ("user_id", TOKEN_COL):
-            df[col] = track_name + "_" + df[col].astype("string")
+            df[col] = track_name + "_" + df[col]
 
     df[TOKEN_COL] = string_series(df[TOKEN_COL])
     for col in feature_cols:
@@ -88,7 +90,7 @@ def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[st
         else:
             df[col] = string_series(df[col])
 
-    assert not labels.isna().any(), "Labels has na values"
+    assert not df["label"].isna().any(), "Labels has na values"
 
     return df
 
@@ -168,7 +170,6 @@ def build_fab_dataloaders(
     logger.info(f"FA_dataloaders: Built dataloaders with {len(train_dl)} train batches and {len(eval_dl)} eval batches")
 
     return FAData(train_dl=train_dl, eval_dl=eval_dl, vocabs=vocabs)
-
 
 
 

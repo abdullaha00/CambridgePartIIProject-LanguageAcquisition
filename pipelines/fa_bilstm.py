@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import logging
 from typing import Optional
@@ -13,7 +15,7 @@ from pipelines.common.evaluation import binary_metrics_score, save_binary_eval_p
 logger = logging.getLogger(__name__)
 
 # ==== CONFIG 
-DATA_VARIANT = "minimal"
+DATA_VARIANT = "reprocessed"
 FEATURE_SET = "exercise"
 BATCH_SIZE = 64
 
@@ -104,13 +106,14 @@ def evaluate(model, dataloader, device, show_progress=True) -> dict:
             mask = batch_device["mask"]
             all_probs.extend(probs[mask].cpu().numpy())
             all_labels.extend(batch_device["labels"][mask].cpu().numpy())
-        # === APPEND DETAILED INFO
-        for i, seq_mask in enumerate(mask):
-            T = int(seq_mask.sum().item())
-            detailed["user_id"].extend([batch["user_ids"][i]] * T)
-            detailed["ex_key"].extend([batch["ex_keys"][i]] * T)
-            detailed["tok_id"].extend(batch["tok_ids"][i][:T].tolist())
-            detailed["target_pos"].extend(batch["target_pos"][i][:T].tolist())
+
+            # === APPEND DETAILED INFO
+            for i, seq_mask in enumerate(mask):
+                T = int(seq_mask.sum().item())
+                detailed["user_id"].extend([batch["user_ids"][i]] * T)
+                detailed["ex_key"].extend([batch["ex_keys"][i]] * T)
+                detailed["tok_id"].extend(batch["tok_ids"][i][:T].tolist())
+                detailed["target_pos"].extend(batch["target_pos"][i][:T].tolist())
 
     probs_np = np.asarray(all_probs)
     labels_np = np.asarray(all_labels)

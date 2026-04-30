@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 
 from .data import TOKEN_COL
+
+logger = logging.getLogger(__name__)
 
 USER_HISTORY_ALPHA = 10.0
 GLOBAL_HISTORY_ALPHA = 20.0
@@ -156,8 +159,14 @@ def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> 
         num_cols.extend([num_log_col, num_missing_col])
 
         for df in (df_train, df_eval):
-            vals = df[source_col].astype(np.float32)
-            missing = vals.isna()
+            if source_col in df.columns:
+                vals = pd.to_numeric(df[source_col], errors="coerce")
+                missing = vals.isna()
+            else:
+                logger.warning(f"Source column {source_col} not found in dataframe; filling with zeros and marking all as missing")
+                vals = pd.Series(np.zeros(len(df), dtype=np.float32), index=df.index)
+                missing = pd.Series(np.ones(len(df), dtype=bool), index=df.index)
+            vals = vals.fillna(0)
 
             df[num_log_col] = np.log1p(vals).astype(np.float32)
             df[num_missing_col] = missing.astype(np.float32)
@@ -165,7 +174,7 @@ def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> 
     for df in (df_train, df_eval):
 
         days = df["days"].fillna(0).astype(np.float32)
-        day_phase = (days % 1.0).to_numpy().dtype(np.float32)
+        day_phase = (days % 1.0).to_numpy(dtype=np.float32)
 
         df["meta_days_frac_sin"] = np.sin(2 * np.pi * day_phase).astype(np.float32)
         df["meta_days_frac_cos"] = np.cos(2 * np.pi * day_phase).astype(np.float32)
