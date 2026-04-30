@@ -30,6 +30,15 @@ META_SOURCE_COLS = ("days", "time", "rt", "ex_inst_idx")
 META_CYCLIC_COLS = ("meta_days_frac_sin", "meta_days_frac_cos")
 
 
+def metadata_invalid_mask(source_col: str, vals: pd.Series) -> pd.Series:
+    if source_col == "time":
+        # time<0 occurs in the dataset, we treat as invalid 
+        return vals < 0
+    if source_col in META_SOURCE_COLS:
+        return vals < 0
+    return pd.Series(False, index=vals.index)
+
+
 def key(left: pd.Series, right: pd.Series) -> pd.Series:
     return pd.Series(zip(left, right), index=left.index)
 
@@ -161,12 +170,12 @@ def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> 
         for df in (df_train, df_eval):
             if source_col in df.columns:
                 vals = pd.to_numeric(df[source_col], errors="coerce")
-                missing = vals.isna()
+                missing = vals.isna() | metadata_invalid_mask(source_col, vals)
             else:
                 logger.warning(f"Source column {source_col} not found in dataframe; filling with zeros and marking all as missing")
                 vals = pd.Series(np.zeros(len(df), dtype=np.float32), index=df.index)
                 missing = pd.Series(np.ones(len(df), dtype=bool), index=df.index)
-            vals = vals.fillna(0)
+            vals = vals.mask(missing, 0)
 
             df[num_log_col] = np.log1p(vals).astype(np.float32)
             df[num_missing_col] = missing.astype(np.float32)
