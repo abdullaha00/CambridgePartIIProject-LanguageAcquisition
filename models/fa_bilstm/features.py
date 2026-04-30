@@ -1,7 +1,12 @@
-import pandas as pd
+from __future__ import annotations
+
 import numpy as np
-from pathlib import Path
-from .data import FAVocabs, FASequence, add_positional_num_features
+import pandas as pd
+
+from .data import TOKEN_COL
+
+USER_HISTORY_ALPHA = 10.0
+GLOBAL_HISTORY_ALPHA = 20.0
 
 POS_NUM_COLS = [
     "pos_ex_len_log",
@@ -18,18 +23,24 @@ POS_NUM_COLS = [
     "tok_has_punct"
 ]
 
-META_SOURCE_COLS = ["days", "time", "rt"]
+META_SOURCE_COLS = ("days", "time", "rt", "ex_inst_idx")
+META_CYCLIC_COLS = ("meta_days_frac_sin", "meta_days_frac_cos")
 
-def add_positional_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:   
+
+def key(left: pd.Series, right: pd.Series) -> pd.Series:
+    return pd.Series(zip(left, right), index=left.index)
+
+
+def add_positional_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
 
     for df in (df_train, df_eval):
-        
-        # === helper cols
-        g = df.groupby("ex_key")
-        pos_in_ex = g.cumcount() + 1
-        ex_len = g.transform("size")
+
+        # === 
+        g = df.groupby("ex_key", sort=False)[TOKEN_COL]
+        pos_in_ex = (g.cumcount() + 1).astype(np.float32)
+        ex_len = g.transform("size").astype(np.float32)
         assert ex_len.min() > 0, "Invalid ex"
-        assert pos_in_ex.min() >= 0, "Invalid position"
+        assert pos_in_ex.min() >= 1, "Invalid position"
         # ===
 
         # == EXERCISE POS FEATS
@@ -37,55 +48,45 @@ def add_positional_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -
         # np default is float64, switch to 32 to save memory
         df["pos_ex_len_log"] = np.log(ex_len).astype(np.float32)
         df["pos_index_log"] = np.log(pos_in_ex).astype(np.float32)
-        df["pos_from_end_log"] = np.log((ex_len - pos_in_ex - 1).clip(lower=0)).astype(np.float32)
-        df["pos_rel"] = (pos_in_ex / (ex_len - 1)).astype(np.float32)
+        df["pos_from_end_log"] = np.log((ex_len - pos_in_ex + 1).clip(lower=0)).astype(np.float32)
+        df["pos_rel"] = ((pos_in_ex - 1) / ((ex_len - 1)).clip(lower=1)).astype(np.float32)
         df["pos_is_first"] = (pos_in_ex == 1).astype(np.float32)
         df["pos_is_last"] = (pos_in_ex == ex_len).astype(np.float32)
 
         # == Tok features
 
-        tok = df["tok"]
-
-        df["tok_len_log"] = np.log(tok.str.len().astype(np.float32)).astype(np.float32)
-        df["tok_is_title"] = tok.str.istitle().astype(np.float32)
-        df["tok_is_upper"] = tok.str.isupper().astype(np.float32)
-        df["tok_has_digit"] = tok.str.contains(r"\d", regex=True).astype(np.float32)
-        df["tok_has_apostrophe"] = tok.str.contains("'", regex=False).astype(np.float32)
-        df["tok_has_punct"] = tok.str.contains(r"[^\w\s']", regex=True).astype(np.float32)
+        df["tok_len_log"] = np.log1p(df[TOKEN_COL].str.len().fillna(0).astype(np.float32)).astype(np.float32)
+        df["tok_is_title"] = df[TOKEN_COL].str.istitle().fillna(False).astype(np.float32)
+        df["tok_is_upper"] = df[TOKEN_COL].str.isupper().fillna(False).astype(np.float32)
+        df["tok_has_digit"] = df[TOKEN_COL].str.contains(r"\d", regex=True, na=False).astype(np.float32)
+        df["tok_has_apostrophe"] = df[TOKEN_COL].str.contains("'", regex=False, na=False).astype(np.float32)
+        df["tok_has_punct"] = df[TOKEN_COL].str.contains(r"[^\w\s']", regex=True, na=False).astype(np.float32)
 
     return df_train, df_eval, tuple(POS_NUM_COLS)
 
-def key(tok_series, suffix_series):
-    return tok_series + "|" + suffix_series
 
 def add_user_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     
-    global_label_mean = df_train["label"].mean()
+    global_train_label_mean = df_train["label"].mean()
 
-    train_users = df_train["user_id"]
-    eval_users = df_eval["user_id"]
-    
-    # groups = [(out_name, suffix)]
-    # where we group by "user_id | suffix"
-    # and output columns including the out_name and suffix, e.g. hist_user_tok_log_count
-
-    groups = [ 
-        ("user", df_train["user_id"], df_eval["user_id"]), # out_name, train_key, eval_key
-        ("user_token", key(df_train["tok"], df_train["user_id"]), key(df_eval["tok"], df_eval["user_id"])),
-        ("user_format", key(df_train["tok"], df_train["format"]), key(df_eval["tok"], df_eval["format"])),
-        ("user_country", key(df_train["tok"], df_train["countries"]), key(df_eval["tok"], df_eval["countries"]))
+    # we group 2 cols into (col1, col2) pairs
+    groups = [
+        ("user", df_train["user_id"], df_eval["user_id"]),
+        ("user_token", key(df_train["user_id"], df_train[TOKEN_COL]), key(df_eval["user_id"], df_eval[TOKEN_COL])),
+        ("user_format", key(df_train["user_id"], df_train["format"]), key(df_eval["user_id"], df_eval["format"])),
+        ("user_country", key(df_train["user_id"], df_train["countries"]), key(df_eval["user_id"], df_eval["countries"])),
     ]
 
     num_cols = []
     for name, train_key, eval_key in groups:
-        #===== TRAIN ROWS: we can use labels here
-        train_counts = df_train.groupby(train_key, sort=False).cumcount()
-        train_errors = df_train.groupby(train_key, sort=False)["label"].cumsum() - df_train["label"] # previous errs
+        #===== TRAIN ROWS: we can use only previous labels here
+        train_counts = df_train.groupby(train_key, sort=False).cumcount().astype(np.float32)
+        train_errors = (df_train.groupby(train_key, sort=False)["label"].cumsum() - df_train["label"]).astype(np.float32)
 
         #===== EVAL ROWS: no labels; just copy aggregate train data
-        train_stats = df_train.groupby(train_key, sort=False)["label"].agg(["count", "sum"])
+        train_stats = df_train.groupby(train_key, sort=False)["label"].agg(["size", "sum"])
 
-        eval_counts = eval_key.map(train_stats["count"]).astype(np.float32)
+        eval_counts = eval_key.map(train_stats["size"]).astype(np.float32)
         eval_errors = eval_key.map(train_stats["sum"]).astype(np.float32)
 
         #=====
@@ -94,42 +95,42 @@ def add_user_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame)
         num_cols.extend([count_col, error_rate_col])
 
         df_train[count_col] = np.log1p(train_counts).astype(np.float32)
-        df_train[error_rate_col] = ((train_errors + ALPHA*global_label_mean) / (train_counts + ALPHA)).astype(np.float32)
+        df_train[error_rate_col] = ((train_errors + USER_HISTORY_ALPHA * global_train_label_mean) / (train_counts + USER_HISTORY_ALPHA)).astype(np.float32)
 
         df_eval[count_col] = np.log1p(eval_counts).astype(np.float32)
-        df_eval[error_rate_col] = ((eval_errors + ALPHA*global_label_mean) / (eval_counts + ALPHA)).astype(np.float32)
+        df_eval[error_rate_col] = ((eval_errors + USER_HISTORY_ALPHA * global_train_label_mean  ) / (eval_counts + USER_HISTORY_ALPHA)).astype(np.float32)
 
     return df_train, df_eval, tuple(num_cols)
 
-def add_global_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    global_label_mean = df_train["label"].mean()
+def add_global_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
 
-    # We group by token | x 
-    # and calculate counts/errors
+    #we group by col1, col2 and compute counts/errors
+    
+    global_train_label_mean = float(df_train["label"].mean())
 
-    train_pos_in_ex = df_train.groupby("ex_key").cumcount().clip(upper=12)
-    eval_pos_in_ex = df_eval.groupby("ex_key").cumcount().clip(upper=12)
+    train_pos_in_ex = df_train.groupby("ex_key", sort=False)[TOKEN_COL].cumcount().clip(upper=12)
+    eval_pos_in_ex = df_eval.groupby("ex_key", sort=False)[TOKEN_COL].cumcount().clip(upper=12)
 
     groups = [
-        ("token", df_train["tok"], df_eval["tok"]),
+        ("token", df_train[TOKEN_COL], df_eval[TOKEN_COL]),
         ("format", df_train["format"], df_eval["format"]),
         ("country", df_train["countries"], df_eval["countries"]),
-        ("token_format", key(df_train["tok"], df_train["format"]), key(df_eval["tok"], df_eval["format"])),
+        ("token_format", key(df_train[TOKEN_COL], df_train["format"]), key(df_eval[TOKEN_COL], df_eval["format"])),
         ("format_pos", key(df_train["format"], train_pos_in_ex), key(df_eval["format"], eval_pos_in_ex)),
-        ("token_pos", key(df_train["tok"], train_pos_in_ex), key(df_eval["tok"], eval_pos_in_ex)),
+        ("token_pos", key(df_train[TOKEN_COL], train_pos_in_ex), key(df_eval[TOKEN_COL], eval_pos_in_ex)),
     ]
 
     num_cols = []
     for name, train_key, eval_key in groups:
-        #===== TRAIN ROWS: we can use labels here
-        train_counts = df_train.groupby(train_key, sort=False).cumcount()
-        train_errors = df_train.groupby(train_key, sort=False)["label"].cumsum() - df_train["label"] # previous errs
+        #===== TRAIN ROWS: we can use only previous labels here
+        train_counts = df_train.groupby(train_key, sort=False).cumcount().astype(np.float32)
+        train_errors = (df_train.groupby(train_key, sort=False)["label"].cumsum() - df_train["label"]).astype(np.float32)
 
         #===== EVAL ROWS: no labels; just copy aggregate train data
-        train_stats = df_train.groupby(train_key, sort=False)["label"].agg(["count", "sum"])
+        train_stats = df_train.groupby(train_key, sort=False)["label"].agg(["size", "sum"])
 
-        eval_counts = eval_key.map(train_stats["count"]).astype(np.float32)
-        eval_errors = eval_key.map(train_stats["sum"]).astype(np.float32)
+        eval_counts = eval_key.map(train_stats["size"]).fillna(0).astype(np.float32)
+        eval_errors = eval_key.map(train_stats["sum"]).fillna(0).astype(np.float32)
 
         #=====
         count_col = f"hist_{name}_log_count"
@@ -137,14 +138,15 @@ def add_global_history_num_features(df_train: pd.DataFrame, df_eval: pd.DataFram
         num_cols.extend([count_col, error_rate_col])
 
         df_train[count_col] = np.log1p(train_counts).astype(np.float32)
-        df_train[error_rate_col] = ((train_errors + ALPHA*global_label_mean) / (train_counts + ALPHA)).astype(np.float32)
+        df_train[error_rate_col] = ((train_errors + GLOBAL_HISTORY_ALPHA * global_train_label_mean) / (train_counts + GLOBAL_HISTORY_ALPHA)).astype(np.float32)
 
         df_eval[count_col] = np.log1p(eval_counts).astype(np.float32)
-        df_eval[error_rate_col] = ((eval_errors + ALPHA*global_label_mean) / (eval_counts + ALPHA)).astype(np.float32)
+        df_eval[error_rate_col] = ((eval_errors + GLOBAL_HISTORY_ALPHA * global_train_label_mean  ) / (eval_counts + GLOBAL_HISTORY_ALPHA)).astype(np.float32)
 
     return df_train, df_eval, tuple(num_cols)
 
-def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
 
     num_cols = []
     
@@ -157,23 +159,28 @@ def add_metadata_num_features(df_train: pd.DataFrame, df_eval: pd.DataFrame) -> 
             vals = df[source_col].astype(np.float32)
             missing = vals.isna()
 
-            df[num_log_col] = np.log1p(vals)
+            df[num_log_col] = np.log1p(vals).astype(np.float32)
             df[num_missing_col] = missing.astype(np.float32)
 
     for df in (df_train, df_eval):
 
         days = df["days"].fillna(0).astype(np.float32)
-        day_phase = (days % 1.0).to_numpy()
+        day_phase = (days % 1.0).to_numpy().dtype(np.float32)
 
-        df["meta_day_phase_sin"] = np.sin(2 * np.pi * day_phase).astype(np.float32)
-        df["meta_day_phase_cos"] = np.cos(2 * np.pi * day_phase).astype(np.float32)
+        df["meta_days_frac_sin"] = np.sin(2 * np.pi * day_phase).astype(np.float32)
+        df["meta_days_frac_cos"] = np.cos(2 * np.pi * day_phase).astype(np.float32)
 
-    num_cols.extend(["meta_day_phase_sin", "meta_day_phase_cos"])
+    num_cols.extend(META_CYCLIC_COLS)
 
-    return df_train, df_eval, tuple()
+    return df_train, df_eval, tuple(num_cols)
 
-def normalise_numeric_features(df_train: pd.DataFrame, df_eval: pd.DataFrame, num_cols: list[str]) -> list[str]:
-    # Normalise based on train only 
+
+def normalise_numeric_features(
+    df_train: pd.DataFrame,
+    df_eval: pd.DataFrame,
+    num_cols: tuple[str, ...],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # Normalise based on train only
 
     for col in num_cols:
         mean = df_train[col].mean()

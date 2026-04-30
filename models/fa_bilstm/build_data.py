@@ -70,7 +70,7 @@ def normalise_frame(df: pd.DataFrame, track_name: str, feature_cols: Iterable[st
     df = df.copy()
     assert {TOKEN_COL, "user_id", "ex_key"}.issubset(df.columns), f"df is missing required columns: {df.columns}"
 
-    df["ex_key"] = df["tok_id"].astype("string").str.slice(0, 10)
+    df["ex_key"] = df["tok_id"].str.slice(0, 10)
     if "dep" not in df.columns:
         df["dep"] = df["deprel"] if "deprel" in df.columns else pd.NA
     if "countries" not in df.columns and "country" in df.columns:
@@ -101,14 +101,14 @@ def load_dfs(track: str, variant: str, train_with_dev: bool, subset: int | None,
             normalise_frame(df_eval, track, feature_cols, prefix_ids=False),
         )
 
-    train_parts = []
-    eval_parts = []
+    train_xs = []
+    eval_xs = []
     all_features = tuple(dict.fromkeys(feature_cols + ("track",)))
     for track_name in TRACKS:
         df_train, df_eval = load_train_and_eval_df(track_name, variant, train_with_dev, subset=subset)
-        train_parts.append(normalise_frame(df_train, track_name, all_features, prefix_ids=True))
-        eval_parts.append(normalise_frame(df_eval, track_name, all_features, prefix_ids=True))
-    return pd.concat(train_parts, ignore_index=True), pd.concat(eval_parts, ignore_index=True)
+        train_xs.append(normalise_frame(df_train, track_name, all_features, prefix_ids=True))
+        eval_xs.append(normalise_frame(df_eval, track_name, all_features, prefix_ids=True))
+    return pd.concat(train_xs, ignore_index=True), pd.concat(eval_xs, ignore_index=True)
 
 def build_fab_dataloaders(
     track: str,
@@ -131,7 +131,7 @@ def build_fab_dataloaders(
 
     # === load dfs
     df_train, df_eval = load_dfs(track, variant, train_with_dev, subset, feature_cols)
-    if track == "all" and "track" not in feature_cols:
+    if track == "all": # mark track in feature col for all track
         feature_cols = tuple(dict.fromkeys(feature_cols + ("track",)))
 
     numeric_feat_cols = []
