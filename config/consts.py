@@ -1,3 +1,5 @@
+from pathlib import Path
+
 EN_ES = "en_es"
 ES_EN = "es_en"
 FR_EN = "fr_en"
