@@ -30,6 +30,8 @@ def build_lmkt_dataloaders(
     tokenizer: AutoTokenizer,
     batch_size: int = 64,
     shuffle_train: bool = True,
+    yn_loss_only: bool = True,
+    reverse_translate_only: bool = True,
     ) -> LMKTDataBundle:
     
     #======= LOAD DATA
@@ -42,9 +44,12 @@ def build_lmkt_dataloaders(
         track, "prompt", train_with_dev, subset=subset
     )
 
-    # We restrict to reverse_translate tasks
-    df_train = df_train[df_train["format"] == "reverse_translate"]
-    df_eval = df_eval[df_eval["format"] == "reverse_translate"]
+    if reverse_translate_only:
+        df_train = df_train[df_train["format"] == "reverse_translate"]
+        df_eval = df_eval[df_eval["format"] == "reverse_translate"]
+    else:
+        df_train = df_train[df_train["format"] == "reverse_translate" or df_train["format"] == "reverse_tap"]
+        df_eval = df_eval[df_eval["format"] == "reverse_translate" or df_eval["format"] == "reverse_tap"]
 
 
     #======= Collapse data
@@ -100,7 +105,7 @@ def build_lmkt_dataloaders(
 
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, collate_fn=
                           partial(lmkt_collate, pad_token_id=tokenizer.pad_token_id,
-                                  y_id=y_id, n_id=n_id))
+                                  y_id=y_id, n_id=n_id, yn_loss_only=yn_loss_only))
     return LMKTDataBundle(train_dataloader=train_dl, 
                           eval_histories=eval_histories_prepended, 
                           pref_ns=pref_ns, 

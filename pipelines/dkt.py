@@ -1,4 +1,5 @@
 from models.dkt.data.build_data import build_dkt_dataloaders
+from config.consts import ITEM_EX, ITEM_TOK
 from db.log_db import MetricRecord
 from models.dkt.BertDKT import BertDKT
 import logging
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 def parse_dkt_args(dkt_args=None):
     p = argparse.ArgumentParser(description="DKT Pipeline Args")
     p.add_argument("--slam-eval", action="store_true", default=False)
+    p.add_argument("--use-prompts", action=argparse.BooleanOptionalAction, default=True)
     return p.parse_args(dkt_args)
     
 def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag, save_every: int | None, resume_from: str | None):
@@ -26,16 +28,17 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
     logger.info(f"Running DKT with args: {dkt_args}")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
-
+    logger.info(f"ITEM_LEVEL: {ITEM_LEVEL}, use_prompts: {dkt_args.use_prompts}")
     #==== BUILD DATALOADER
     dkt_data = build_dkt_dataloaders(
         track=TRACK,
         variant="reprocessed",
         subset=SUBSET,
-        item_level=ITEM_LEVEL,
+        item_level=item_level,
         train_with_dev=train_with_dev,
         batch_size=32,
-        shuffle_train=True
+        shuffle_train=True,
+        use_prompts=dkt_args.use_prompts
     )
     
     #==== Build model
@@ -72,6 +75,10 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
 
     # ==== Train
 
+    rec_variant = "item_tok" if ITEM_LEVEL == ITEM_TOK else (
+        "item_ex_" + f"{"prompts" if dkt_args.use_prompts else "slam_toks"}"
+    )
+
     records = []
     loss_history = []
 
@@ -102,7 +109,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
                 track=TRACK,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant=ITEM_LEVEL,
+                variant=rec_variant,
                 auc=metrics.get("auc"),
                 acc=metrics.get("accuracy"),
                 f1=metrics.get("f1"),

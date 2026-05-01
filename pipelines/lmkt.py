@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 # Add any LM-KT specific arguments here, future use (none currently)
 def parse_lmkt_args(dkt_args=None):
     p = argparse.ArgumentParser(description="LM-KT Pipeline Args")
+    p.add_argument("--yn-loss-only", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--reverse-translate-only", action=argparse.BooleanOptionalAction, default=True)
     args = p.parse_args(dkt_args)
     return args
 
@@ -23,7 +25,10 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
     if save_every is None:
         save_every = eval_every
 
+    lmkt_args = parse_lmkt_args(next_args)
+
     logger.info("Running LM-KT pipeline")
+    logger.info(f"Running LM-KT with args: {lmkt_args}")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
     
@@ -64,7 +69,9 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
         train_with_dev=train_with_dev,
         tokenizer=model.tokenizer,
         batch_size=2,
-        shuffle_train=True
+        shuffle_train=True,
+        yn_loss_only=lmkt_args.yn_loss_only,
+        reverse_translate_only=lmkt_args.reverse_translate_only
     )
 
     # ==== Train

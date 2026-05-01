@@ -42,24 +42,68 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 0.0
 GRAD_CLIP = 5.0
 
+ABLATIONS = (
+    "full",
+    "token_only_sequence",
+    "no_user_history",
+    "no_global_history",
+    "no_all_history",
+    "no_position_features",
+    "no_numeric_metadata",
+    "no_numeric_features",
+    "no_positive_class_weight",
+)
+
 
 def parse_fab_args(sdkt_args=None):
     p = argparse.ArgumentParser(description="FA-BiLSTM Pipeline Args")
     p.add_argument("--variant", type=str, default=DATA_VARIANT)
     p.add_argument("--feature-set", type=str, default=FEATURE_SET)
+    p.add_argument("--ablation", choices=ABLATIONS, default="full")
     p.add_argument("--emb-dim", type=int, default=TOKEN_EMB_DIM)
     p.add_argument("--hid-dim", type=int, default=HIDDEN_DIM)
     p.add_argument("--meta-emb-dim", type=int, default=FEATURE_EMB_DIM)
     p.add_argument("--dropout", type=float, default=DROPOUT)
     p.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     p.add_argument("--lr", type=float, default=LEARNING_RATE)
-    p.add_argument("--history-features", action="store_true", default=USE_HISTORY_FEATURES)
-    p.add_argument("--rich-history-features", action="store_true", default=USE_RICH_HISTORY_FEATURES)
-    p.add_argument("--position-features", action="store_true", default=USE_POSITION_FEATURES)
-    p.add_argument("--numeric-metadata", action="store_true", default=USE_NUMERIC_METADATA)
-    p.add_argument("--normalize-numeric-features", action="store_true", default=NORMALIZE_NUMERIC_FEATURES)
+    p.add_argument("--history-features", action=argparse.BooleanOptionalAction, default=USE_HISTORY_FEATURES)
+    p.add_argument("--rich-history-features", action=argparse.BooleanOptionalAction, default=USE_RICH_HISTORY_FEATURES)
+    p.add_argument("--position-features", action=argparse.BooleanOptionalAction, default=USE_POSITION_FEATURES)
+    p.add_argument("--numeric-metadata", action=argparse.BooleanOptionalAction, default=USE_NUMERIC_METADATA)
+    p.add_argument("--normalize-numeric-features", action=argparse.BooleanOptionalAction, default=NORMALIZE_NUMERIC_FEATURES)
+    p.add_argument("--positive-class-weight", type=float, default=POSITIVE_CLASS_WEIGHT)
     p.add_argument("--no-progress", action="store_true")
-    return p.parse_args(sdkt_args)
+    args = p.parse_args(sdkt_args)
+    return apply_ablation(args)
+
+
+def apply_ablation(args):
+    if args.ablation == "token_only_sequence":
+        args.feature_set = "token-only"
+        args.history_features = False
+        args.rich_history_features = False
+        args.position_features = False
+        args.numeric_metadata = False
+    elif args.ablation == "no_user_history":
+        args.history_features = False
+    elif args.ablation == "no_global_history":
+        args.rich_history_features = False
+    elif args.ablation == "no_all_history":
+        args.history_features = False
+        args.rich_history_features = False
+    elif args.ablation == "no_position_features":
+        args.position_features = False
+    elif args.ablation == "no_numeric_metadata":
+        args.numeric_metadata = False
+    elif args.ablation == "no_numeric_features":
+        args.history_features = False
+        args.rich_history_features = False
+        args.position_features = False
+        args.numeric_metadata = False
+    elif args.ablation == "no_positive_class_weight":
+        args.positive_class_weight = 1.0
+
+    return args
 
 
 def move_batch_to_device(batch: dict, device: torch.device) -> dict:
@@ -167,7 +211,7 @@ def run_fa_bilstm_pipeline(
         hidden_dim=args.hid_dim,
         num_layers=NUM_LAYERS,
         dropout=args.dropout,
-        positive_class_weight=POSITIVE_CLASS_WEIGHT,
+        positive_class_weight=args.positive_class_weight,
         numeric_feat_dim=len(data.vocabs.numeric_feature_cols),
         classifier_hidden_dim=CLASSIFIER_HIDDEN_DIM,
         classifier_dropout=CLASSIFIER_DROPOUT,
@@ -202,7 +246,9 @@ def run_fa_bilstm_pipeline(
     #==
 
     records = []
-    rec_variant = f"fa_bilstm_{args.variant}_{args. feature_set.replace(',', '-')}"
+    rec_variant = f"fa_bilstm_{args.variant}_{args.feature_set.replace(',', '-')}"
+    if args.ablation != "full":
+        rec_variant = f"{rec_variant}_{args.ablation}"
 
     #==== TRAIN
     for epoch in range(start_epoch, epochs + 1):

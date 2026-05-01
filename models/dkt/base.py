@@ -133,6 +133,7 @@ class DKTBase(nn.Module):
                 A = A.to(self.device) # (B, T)
 
                 mask = mask.to(self.device)
+                pref_lens = pref_lens.to(self.device)
                 seen_mask = seen_mask.to(self.device)
 
                 B, T = Q.size()

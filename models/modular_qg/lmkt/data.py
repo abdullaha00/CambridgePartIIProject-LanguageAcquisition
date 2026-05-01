@@ -62,7 +62,7 @@ class SeqDatasetLMKT(Dataset):
     def __getitem__(self, idx):
         return self.seqs[idx]
 
-def lmkt_collate(batch, pad_token_id: int, y_id: int, n_id: int) -> Dict[str, torch.Tensor]:
+def lmkt_collate(batch, pad_token_id: int, y_id: int, n_id: int, yn_loss_only: bool) -> Dict[str, torch.Tensor]:
     # Batch: list[Tensor(seq_len)]
 
     T_max = max(x.numel() for x in batch)
@@ -76,20 +76,15 @@ def lmkt_collate(batch, pad_token_id: int, y_id: int, n_id: int) -> Dict[str, to
         seqs_padded[i, :T] = seq
         mask[i, :T] = 1
 
-    # OPT1: 
-    # == -100 signifies ignore for LM loss =====
-    # # We ignore everything but <Y/N> labels
-
-    # labels = torch.full_like(seqs_padded, -100)
-    
-    # yn_mask = (seqs_padded == y_id) | (seqs_padded == n_id)
-    # labels[yn_mask] = seqs_padded[yn_mask]
-    
-    # OPT2:
-    # We compute loss on non-padding labels
-
-    labels = seqs_padded.clone()
-    labels[labels == pad_token_id] = -100 # ignore padding in loss
+    if yn_loss_only:
+        # == -100 signifies ignore for LM loss =====
+        # We ignore everything but <Y/N> labels
+        labels = torch.full_like(seqs_padded, -100)
+        yn_mask = (seqs_padded == y_id) | (seqs_padded == n_id)
+        labels[yn_mask] = seqs_padded[yn_mask]
+    else:
+        # we compute loss on non-padding labels
+        labels = seqs_padded.clone()
+        labels[labels == pad_token_id] = -100 # ignore padding in loss
 
     return {"input_ids": seqs_padded, "attention_mask": mask, "labels": labels}
-
