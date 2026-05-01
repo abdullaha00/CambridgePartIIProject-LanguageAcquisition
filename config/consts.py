@@ -16,3 +16,6 @@ ALL_TRACK = "all"
 
 ITEM_TOK = "token"
 ITEM_EX = "exercise"
+
+# ==== CHECKPOINTING
+BASE_SAVE_DIR = Path("/mnt/hdd/may1/")

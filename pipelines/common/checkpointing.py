@@ -7,10 +7,10 @@ import torch
 from db.log_db import MetricRecord
 from typing import Any
 import logging 
+from config.consts import BASE_SAVE_DIR
 
 logger = logging.getLogger(__name__)
 
-BASE_SAVE_DIR = Path("/mnt/hdd/ntf_sdkt/")
 
 @dataclass(frozen=True)
 class RunKey:
