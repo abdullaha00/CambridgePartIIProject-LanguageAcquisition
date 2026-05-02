@@ -102,7 +102,7 @@ elif MODEL == "dkt" or MODEL == "bert-dkt":
         TRACK=TRACK,
         SUBSET=SUBSET,
         train_with_dev=TRAIN_WITH_DEV,
-        ITEM_LEVEL=ITEM_LEVEL,
+        item_level=ITEM_LEVEL,
         epochs=EPOCHS,
         eval_every=EVAL_EVERY,
         save_every=args.save_every,

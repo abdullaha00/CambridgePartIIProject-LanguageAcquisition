@@ -20,7 +20,7 @@ def parse_dkt_args(dkt_args=None):
     p.add_argument("--use-prompts", action=argparse.BooleanOptionalAction, default=True)
     return p.parse_args(dkt_args)
     
-def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epochs, eval_every, next_args, tag, save_every: int | None, resume_from: str | None):
+def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, item_level, epochs, eval_every, next_args, tag, save_every: int | None, resume_from: str | None):
 
     dkt_args = parse_dkt_args(next_args)
 
@@ -28,7 +28,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
     logger.info(f"Running DKT with args: {dkt_args}")
 
     logger.info(f"Building dataloaders for track {TRACK}, subset {SUBSET}, train_with_dev={train_with_dev}")
-    logger.info(f"ITEM_LEVEL: {ITEM_LEVEL}, use_prompts: {dkt_args.use_prompts}")
+    logger.info(f"ITEM_LEVEL: {item_level}, use_prompts: {dkt_args.use_prompts}")
     #==== BUILD DATALOADER
     dkt_data = build_dkt_dataloaders(
         track=TRACK,
@@ -75,7 +75,7 @@ def run_dkt_pipeline(model_name, TRACK, SUBSET, train_with_dev, ITEM_LEVEL, epoc
 
     # ==== Train
 
-    rec_variant = "item_tok" if ITEM_LEVEL == ITEM_TOK else (
+    rec_variant = "item_tok" if item_level == ITEM_TOK else (
         "item_ex_" + f"{"prompts" if dkt_args.use_prompts else "slam_toks"}"
     )
 
