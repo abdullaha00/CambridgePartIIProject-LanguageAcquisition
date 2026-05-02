@@ -94,8 +94,8 @@ def build_dkt_dataloaders(
         if use_prompts:
             # We restrict to reverse_translate tasks, since those have prompts only
             logger.info("Restricting to reverse_translate + reverse_tap format for exercise-level DKT to use prompts")
-            df_train = df_train[df_train["format"] == "reverse_translate" or df_train["format"] == "reverse_tap"]
-            df_eval = df_eval[df_eval["format"] == "reverse_translate" or df_eval["format"] == "reverse_tap"]
+            df_train = df_train[(df_train["format"] == "reverse_translate") | (df_train["format"] == "reverse_tap")]
+            df_eval = df_eval[(df_eval["format"] == "reverse_translate") | (df_eval["format"] == "reverse_tap")]
 
             
             dft_prompts, dfe_prompts = load_train_and_eval_df(track, "prompt", train_with_dev, subset=subset)

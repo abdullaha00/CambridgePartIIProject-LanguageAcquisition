@@ -48,8 +48,9 @@ def build_lmkt_dataloaders(
         df_train = df_train[df_train["format"] == "reverse_translate"]
         df_eval = df_eval[df_eval["format"] == "reverse_translate"]
     else:
-        df_train = df_train[df_train["format"] == "reverse_translate" or df_train["format"] == "reverse_tap"]
-        df_eval = df_eval[df_eval["format"] == "reverse_translate" or df_eval["format"] == "reverse_tap"]
+        df_train = df_train[(df_train["format"] == "reverse_translate") | (df_train["format"] == "reverse_tap")]
+        df_eval = df_eval[(df_eval["format"] == "reverse_translate") | (df_eval["format"] == "reverse_tap")]
+
 
 
     #======= Collapse data
