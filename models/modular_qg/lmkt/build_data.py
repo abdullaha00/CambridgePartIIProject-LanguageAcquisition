@@ -47,9 +47,11 @@ def build_lmkt_dataloaders(
     )
 
     if reverse_translate_only:
+        logger.info("Filtering to reverse_translate format only")
         df_train = df_train[df_train["format"] == "reverse_translate"]
         df_eval = df_eval[df_eval["format"] == "reverse_translate"]
     else:
+        logger.info("Keeping both reverse_translate and reverse_tap formats")
         df_train = df_train[(df_train["format"] == "reverse_translate") | (df_train["format"] == "reverse_tap")]
         df_eval = df_eval[(df_eval["format"] == "reverse_translate") | (df_eval["format"] == "reverse_tap")]
 
