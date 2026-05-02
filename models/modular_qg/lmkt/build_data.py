@@ -36,9 +36,11 @@ def build_lmkt_dataloaders(
     
     #======= LOAD DATA
 
+
     df_train, df_eval = load_train_and_eval_df(
         track, variant, train_with_dev, subset=subset
     )
+    logger.info("Loading prompt data!")
 
     dft_prompts, dfe_prompts = load_train_and_eval_df(
         track, "prompt", train_with_dev, subset=subset

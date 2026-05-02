@@ -120,6 +120,7 @@ elif MODEL == "lmkt":
         eval_every=EVAL_EVERY,
         save_every=args.save_every,
         resume_from=args.resume,
+        next_args=next_args,
         tag=args.tag,
     )
 
