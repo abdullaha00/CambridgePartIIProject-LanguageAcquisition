@@ -94,13 +94,11 @@ def build_dkt_dataloaders(
         if use_prompts:
             # We restrict to reverse_translate tasks, since those have prompts only
             logger.info("Restricting to reverse_translate + reverse_tap format for exercise-level DKT to use prompts")
-        df_train = df_train[df_train["format"] == "reverse_translate" or df_train["format"] == "reverse_tap"]
-        df_eval = df_eval[df_eval["format"] == "reverse_translate" or df_eval["format"] == "reverse_tap"]
+            df_train = df_train[df_train["format"] == "reverse_translate" or df_train["format"] == "reverse_tap"]
+            df_eval = df_eval[df_eval["format"] == "reverse_translate" or df_eval["format"] == "reverse_tap"]
 
             
-            dft_prompts, dfe_prompts = load_train_and_eval_df(
-                track, "prompt", train_with_dev, subset=subset
-            )
+            dft_prompts, dfe_prompts = load_train_and_eval_df(track, "prompt", train_with_dev, subset=subset)
 
         item_col = "prompt" if use_prompts else "tok_text"
         bundle: SeqBundle = build_ex_sequences(df_train, df_eval, item_col=item_col, dft_prompts=dft_prompts, dfe_prompts=dfe_prompts, drop_unk=False)
