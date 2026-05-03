@@ -21,6 +21,7 @@ class LMKTDataBundle:
     pref_ns: Dict[str, int]
     train_seen_prompts: set[str]
     tokenizer: AutoTokenizer
+    compact_serialisation: bool
 
 def build_lmkt_dataloaders(
     track: str,
@@ -33,6 +34,7 @@ def build_lmkt_dataloaders(
     yn_loss_only: bool = True,
     reverse_translate_only: bool = True,
     sliding_window: bool = False,
+    compact_serialisation: bool = False,
     ) -> LMKTDataBundle:
     
     #======= LOAD DATA
@@ -104,8 +106,13 @@ def build_lmkt_dataloaders(
         
     #==== Build dataset
     train_mode = "sliding" if sliding_window else "truncate-left"
-    logger.info(f"Building LMKT training dataset with mode={train_mode}")
-    train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer, mode=train_mode)
+    logger.info(f"Building LMKT training dataset with mode={train_mode}, compact_serialisation={compact_serialisation}")
+    train_ds = SeqDatasetLMKT(
+        train_histories,
+        tokenizer=tokenizer,
+        mode=train_mode,
+        compact_serialisation=compact_serialisation
+    )
 
     #==== Build dataloaders
     y_id = tokenizer.convert_tokens_to_ids(TOK_Y)
@@ -118,4 +125,5 @@ def build_lmkt_dataloaders(
                           eval_histories=eval_histories_prepended, 
                           pref_ns=pref_ns, 
                           train_seen_prompts=train_seen_prompts,
-                          tokenizer=tokenizer)
+                          tokenizer=tokenizer,
+                          compact_serialisation=compact_serialisation)

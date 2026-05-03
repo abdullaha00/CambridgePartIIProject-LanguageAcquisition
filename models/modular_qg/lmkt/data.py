@@ -20,12 +20,19 @@ class SeqDatasetLMKT(Dataset):
     seqs[idx] holds encoded tok_ids for the full hitory of user idx
     """
 
-    def __init__(self, histories: dict, tokenizer, max_length: int = 1024, mode: str = "truncate-left"):
+    def __init__(
+        self,
+        histories: dict,
+        tokenizer,
+        max_length: int = 1024,
+        mode: str = "truncate-left",
+        compact_serialisation: bool = False
+    ):
         
         self.seqs: List[torch.Tensor] = []
         # TOKENISE HISTORIES
         for _, history in tqdm(histories.items(), desc="Tokenizing histories", leave=False):
-            text = history_text(history)
+            text = history_text(history, compact=compact_serialisation)
             token_ids = tokenizer.encode(text, add_special_tokens=False, truncation=False) 
 
             if len(token_ids) <= max_length:

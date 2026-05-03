@@ -18,8 +18,16 @@ def parse_lmkt_args(dkt_args=None):
     p.add_argument("--yn-loss-only", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--reverse-translate-only", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--sliding-window", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--compact", action=argparse.BooleanOptionalAction, default=False)
     args = p.parse_args(dkt_args)
     return args
+
+def lmkt_variant_name(args) -> str:
+    formats = "rt" if args.reverse_translate_only else "rt_tap"
+    loss_type = "yn" if args.yn_loss_only else "full_lm"
+    window = "sliding" if args.sliding_window else "left"
+    serialisation = "compact" if args.compact_serialization else "spaced"
+    return f"{formats}_{loss_type}_{window}_{serialisation}"
 
 def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None, next_args=None, resume_from=None, tag=None) -> list[MetricRecord]:
 
@@ -74,6 +82,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
         yn_loss_only=lmkt_args.yn_loss_only,
         reverse_translate_only=lmkt_args.reverse_translate_only,
         sliding_window=lmkt_args.sliding_window,
+        compact_serialisation=lmkt_args.compact
     )
 
     # ==== Train
@@ -89,6 +98,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
                 lmkt_data.pref_ns,
                 lmkt_data.train_seen_prompts,
                 return_detailed=True,
+                compact_serialization=lmkt_data.compact_serialisation,
             )
             
             logger.info("Epoch %d | AUC=%.5f | AUC (seen)=%s | AUC (unseen)=%s | Accuracy=%.5f | F1=%.5f",
@@ -99,7 +109,7 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
                 track=TRACK,
                 subset=SUBSET,
                 train_with_dev=train_with_dev,
-                variant=None,
+                variant=lmkt_variant_name(lmkt_args),
                 auc=metrics.get("auc"),
                 acc=metrics.get("accuracy"),
                 f1=metrics.get("f1"),

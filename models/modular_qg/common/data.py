@@ -56,7 +56,7 @@ def build_user_sequences_text(df_ex: pd.DataFrame) -> Dict[str, List[Tuple[str, 
     
     return histories
 
-def history_text(history: Sequence[Tuple[str, int]]) -> str:
+def history_text(history: Sequence[Tuple[str, int]], compact: bool = False) -> str:
     """
     Composes history text from sequence of (prompt, correct01)
     (prompt, correct01) -> <BOS> <Q> prompt <A> <Y/N> <Q> prompt <A> <Y/N> ...
@@ -64,8 +64,9 @@ def history_text(history: Sequence[Tuple[str, int]]) -> str:
     """
     assert history
 
-    out = []
-    for text, correct in history:
-        out.append(f"{TOK_Q} {text} {TOK_A} {TOK_Y if correct == 1 else TOK_N}")
-    body = " ".join(out)
+    if compact:
+        body = "".join(f"{TOK_Q}{text}{TOK_A}{TOK_Y if correct == 1 else TOK_N}" for text, correct in history)
+        return f"{TOK_BOS}{body}"
+
+    body = " ".join(f"{TOK_Q} {text} {TOK_A} {TOK_Y if correct == 1 else TOK_N}" for text, correct in history)
     return f"{TOK_BOS} {body}".strip()

@@ -77,6 +77,7 @@ class LMKTModel(torch.nn.Module):
             eval_pref_ns: Dict[str, int],
             train_seen_prompts: set[str],
             return_detailed: bool = True,
+            compact_serialization: bool = False
         ) -> dict[str, float]:
 
         """
@@ -112,7 +113,7 @@ class LMKTModel(torch.nn.Module):
                     continue
                 
                 # GENERATE FULL HISTORY ENCDOING WITH NO TRUNCUATION
-                text = history_text(hist)
+                text = history_text(hist, compact=compact_serialization)
                 ids = tok.encode(text, add_special_tokens=False, truncation=False, return_tensors="pt").to(self.device)
                 
                 # We do not evaluate on the train prefix of the sequence
@@ -225,7 +226,12 @@ class LMKTModel(torch.nn.Module):
 
 # ===== QUESTION GENERATION FUNCTIONS for LMKT
 
-    def p_y_given_question_batch(self, history_prefixes: List[str], question_texts: List[str]) -> torch.Tensor:
+    def p_y_given_question_batch(
+        self,
+        history_prefixes: List[str],
+        question_texts: List[str],
+        compact_serialisation: bool = False
+    ) -> torch.Tensor:
         self.eval()
         
         tok = self.tokenizer
@@ -246,10 +252,10 @@ class LMKTModel(torch.nn.Module):
             if not (qt and qt.strip()):
                 logger.warning(f"Empty question_text passed to p_y_given_question")
             
-            if hp and hp.strip():
-                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A} ")
+            if compact_serialisation:
+                prompts.append(f"{hp}{TOK_Q}{qt}{TOK_A}" if hp.strip() else f"{TOK_BOS}{TOK_Q}{qt}{TOK_A}")
             else:
-                prompts.append(f"{TOK_BOS} {TOK_Q} {qt} {TOK_A} ")
+                prompts.append(f"{hp} {TOK_Q} {qt} {TOK_A} " if hp.strip() else f"{TOK_BOS} {TOK_Q} {qt} {TOK_A} ")
         
         
         enc_out = tok(
