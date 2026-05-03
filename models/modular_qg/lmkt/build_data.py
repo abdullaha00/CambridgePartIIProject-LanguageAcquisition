@@ -32,6 +32,7 @@ def build_lmkt_dataloaders(
     shuffle_train: bool = True,
     yn_loss_only: bool = True,
     reverse_translate_only: bool = True,
+    sliding_window: bool = False,
     ) -> LMKTDataBundle:
     
     #======= LOAD DATA
@@ -102,7 +103,9 @@ def build_lmkt_dataloaders(
         pref_ns[uid] = pref_n
         
     #==== Build dataset
-    train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer)
+    train_mode = "sliding" if sliding_window else "truncate-left"
+    logger.info(f"Building LMKT training dataset with mode={train_mode}")
+    train_ds = SeqDatasetLMKT(train_histories, tokenizer=tokenizer, mode=train_mode)
 
     #==== Build dataloaders
     y_id = tokenizer.convert_tokens_to_ids(TOK_Y)

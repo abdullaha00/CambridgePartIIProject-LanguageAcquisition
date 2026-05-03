@@ -17,6 +17,7 @@ def parse_lmkt_args(dkt_args=None):
     p = argparse.ArgumentParser(description="LM-KT Pipeline Args")
     p.add_argument("--yn-loss-only", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--reverse-translate-only", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--sliding-window", action=argparse.BooleanOptionalAction, default=False)
     args = p.parse_args(dkt_args)
     return args
 
@@ -71,7 +72,8 @@ def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1
         batch_size=2,
         shuffle_train=True,
         yn_loss_only=lmkt_args.yn_loss_only,
-        reverse_translate_only=lmkt_args.reverse_translate_only
+        reverse_translate_only=lmkt_args.reverse_translate_only,
+        sliding_window=lmkt_args.sliding_window,
     )
 
     # ==== Train
