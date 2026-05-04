@@ -26,7 +26,7 @@ def lmkt_variant_name(args) -> str:
     formats = "rt" if args.reverse_translate_only else "rt_tap"
     loss_type = "yn" if args.yn_loss_only else "full_lm"
     window = "sliding" if args.sliding_window else "left"
-    serialisation = "compact" if args.compact_serialization else "spaced"
+    serialisation = "compact" if args.compact else "spaced"
     return f"{formats}_{loss_type}_{window}_{serialisation}"
 
 def run_lmkt_pipeline(TRACK, SUBSET, train_with_dev, EPOCHS, eval_every: int = 1, save_every: int | None = None, next_args=None, resume_from=None, tag=None) -> list[MetricRecord]:
