@@ -51,9 +51,14 @@ class SeqDatasetLMKT(Dataset):
                     self.seqs.append(torch.tensor(window_ids, dtype=torch.long))
                 elif mode == "sliding":
                     # WE USE A SLIDING WINDOW DUE TO CONTEXT WINDOW LENGTHS
-                    WINDOW = 1024
-                    STRIDE = 256
-                    for start in range(0, len(token_ids), STRIDE):
+                    WINDOW = max_length
+                    STRIDE = 512
+                    last_start = len(token_ids) - WINDOW
+                    starts = list(range(0, last_start + 1, STRIDE))
+                    if starts[-1] != last_start:
+                        starts.append(last_start)
+
+                    for start in starts:
                         window_ids = token_ids[start:start+WINDOW]
                         self.seqs.append(torch.tensor(window_ids, dtype=torch.long))
                 elif mode == "random":
