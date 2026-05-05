@@ -1,4 +1,6 @@
 from data_processing.data_parquet import load_train_and_eval_df_strict
+from scipy.sparse import hstack
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
@@ -6,6 +8,8 @@ import logging
 from db.log_db import MetricRecord
 
 logger = logging.getLogger(__name__)
+
+CAT_FEATURES = ["user_id", "format", "tok", "pos", "deprel"]
 
 def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
 
@@ -18,8 +22,20 @@ def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
     # === ENCODE DATA
 
     enc = OneHotEncoder(sparse_output=True, handle_unknown="ignore")
-    encodedData = enc.fit_transform(X_train[['user_id', 'tok', 'pos', 'deprel']])
-    encoded_test = enc.transform(X_test[['user_id', 'tok', 'pos', 'deprel']])
+
+    morph = CountVectorizer(tokenizer=lambda x: [kv.split("=")[0] for kv in x.split("|")], 
+                            token_pattern=None, 
+                            lowercase=False, 
+                            binary=True)
+    
+    encodedData = hstack(
+        [enc.fit_transform(X_train[CAT_FEATURES]), morph.fit_transform(X_train["meta"].fillna(""))],
+        format="csr",
+    )
+    encoded_test = hstack(
+        [enc.transform(X_test[CAT_FEATURES]), morph.transform(X_test["meta"].fillna(""))],
+        format="csr",
+    )
 
     # === 
 
