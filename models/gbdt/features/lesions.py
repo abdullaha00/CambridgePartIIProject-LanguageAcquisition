@@ -9,22 +9,26 @@ USER_ID = {"user_id"}
 WORD_IDS = {
     "tok",
     "lemma",
-    "user_id",
     "prev_tok",
     "next_tok",
+    "rt_tok",
 }
 
-WORD_OTHER = {
+WORD_LINGUISTIC = {
     "pos",
     "prev_pos",
     "next_pos",
+    "rt_pos",
+    "rt",
+    "deprel",
+    "tok_len",
 }
 
-EXTERNAL = {
-    "translation",
+EXTERNAL_LEXICAL = {
     "src_freq",
     "dst_freq",
     "lev_distance",
+    "aoa",
 }
 
 USER_OTHER = {
@@ -34,15 +38,19 @@ USER_OTHER = {
     "tod_entropy",
 }
 
-EXERCISE = {
+EXERCISE_CONTEXT = {
+    "ex_inst_idx",
+    "exercise_num",
+    "exercise_length",
     "client",
     "session",
     "format",
     "days",
     "time",
     "countries",
-    "deprel",
 }
+
+METADATA_EXTRA = {"countries"}
 
 MORPH_PREFIX = "morph__"
 TEMPORAL_PREFIXES = (
@@ -74,12 +82,15 @@ NEIGHBORS = {
 FEATURE_GROUPS = {
     "user_id": USER_ID,
     "word_ids": WORD_IDS,
-    "word_other": WORD_OTHER,
-    "external": EXTERNAL,
+    "word_linguistic": WORD_LINGUISTIC,
+    "word_other": WORD_LINGUISTIC,
+    "external_lexical": EXTERNAL_LEXICAL,
+    "external": EXTERNAL_LEXICAL,
     "user_other": USER_OTHER,
-    "exercise": EXERCISE,
+    "exercise_context": EXERCISE_CONTEXT,
+    "exercise": EXERCISE_CONTEXT,
+    "metadata_extra": METADATA_EXTRA,
     "temporal_exact": TEMPORAL_EXACT,
-    "temporal_prefixes": TEMPORAL_PREFIXES,
     "neighbors": NEIGHBORS,
 }
 
@@ -91,22 +102,35 @@ PREFIX_GROUPS = {
 LESIONS = {
     "none": [],
 
-    "neighbors": ["neighbors"],
-
+    "exercise_context": ["exercise_context"],
+    "user": ["user_id", "user_other"],
+    "word": ["word_ids", "word_linguistic", "morph"],
     "word_ids": ["word_ids"],
-    "word_other": ["word_other", "morph"], 
-    "word": ["word_ids", "word_other", "morph"],
+    "word_linguistic": ["word_linguistic", "morph"],
+    "external_lexical": ["external_lexical"],
+    "temporal": ["temporal_exact", "temporal_prefixes"],
+    "neighbors": ["neighbors"],
+    "metadata_extra": ["metadata_extra"],
 
-    "external": ["external"],
-
+    "exercise": ["exercise_context"],
+    "word_other": ["word_linguistic", "morph"],
+    "external": ["external_lexical"],
     "user_id": ["user_id"],
     "user_other": ["user_other"],
-    "user": ["user_id", "user_other"],
-
-    "temporal": ["temporal_exact", "temporal_prefixes"],
-
-    "exercise": ["exercise"],
 }
+
+EVAL_LESIONS = [
+    "none",
+    "exercise_context",
+    "user",
+    "word",
+    "word_ids",
+    "word_linguistic",
+    "external_lexical",
+    "temporal",
+    "neighbors",
+    "metadata_extra",
+]
 
 def lesion_to_drop_set(df_cols, lesion: str) -> dict:
     if lesion not in LESIONS:
