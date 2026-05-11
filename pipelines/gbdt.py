@@ -86,6 +86,10 @@ def build_variant_label(lesion: str | None, exercise_ens: bool) -> str | None:
         x.append("fmt_ens")
     return "|".join(x) if x else None
 
+def apply_eval_lesion(df: pd.DataFrame, lesion: str) -> pd.DataFrame:
+    df_lesion = apply_lesion(df, lesion)
+    return df_lesion.join(df[[col for col in GBDT_EVAL_EXTRA_COLS if col not in df_lesion.columns]])
+
 
 def run_single_track_fmt_ensemble(
     track: str,
@@ -102,7 +106,7 @@ def run_single_track_fmt_ensemble(
     #====== LESION =====
     if lesion is not None:
         df_train = apply_lesion(df_train, lesion)
-        df_test = apply_lesion(df_test, lesion)
+        df_test = apply_eval_lesion(df_test, lesion)
     #===== TRAIN GDBT =====
     base_model = GBDTModel(track=track)
     X_test, y_test = base_model.fit(df_train, df_test)
@@ -205,7 +209,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
         #====== LESION =====
         if gbdt_args.lesion is not None:
             df_train = apply_lesion(df_train, gbdt_args.lesion)
-            df_test = apply_lesion(df_test, gbdt_args.lesion)
+            df_test = apply_eval_lesion(df_test, gbdt_args.lesion)
         #===== TRAIN GDBT =====
         model = GBDTModel(track=track)
         X_test, y_test = model.fit(df_train, df_test)
@@ -249,7 +253,7 @@ def run_gbdt_pipeline(track="en_es",SUBSET=None,  train_with_dev=False, next_arg
             # LESION
             if gbdt_args.lesion is not None:    
                 df_train = apply_lesion(df_train, gbdt_args.lesion)
-                df_test = apply_lesion(df_test, gbdt_args.lesion)
+                df_test = apply_eval_lesion(df_test, gbdt_args.lesion)
 
             tr_dfs[tr] = (df_train, df_test)
 
