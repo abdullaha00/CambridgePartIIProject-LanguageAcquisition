@@ -6,10 +6,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 import logging
 from db.log_db import MetricRecord
+from pipelines.common.evaluation import save_binary_eval_predictions
 
 logger = logging.getLogger(__name__)
 
 CAT_FEATURES = ["user_id", "format", "tok", "pos", "deprel"]
+LR_EVAL_EXTRA_COLS = ["user_id", "tok_id"]
 
 def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
 
@@ -63,4 +65,11 @@ def run_lr_pipeline(TRACK="en_es", SUBSET=None, train_with_dev=False, tag=None):
         f1=float("nan"),
         tag=tag,
     )
+    pred_path = save_binary_eval_predictions(
+        rec,
+        y_true=Y_test,
+        probs=y_proba[:, 1],
+        extra_cols={col: df_test[col].to_numpy() for col in LR_EVAL_EXTRA_COLS},
+    )
+    logger.info(f"Saved LR evaluation predictions to {pred_path}")
     return [rec]
