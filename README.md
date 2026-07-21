@@ -1,5 +1,7 @@
 # Modelling Second Language Acquisition
 
+Dissertation available [here](https://drive.google.com/file/d/1zjMktb9Z2qWD5nbsHTnFeCuXmzKaXTvx/view?usp=sharing).
+
 This repo is a Cambridge Part II Project for the Computer Science Tripos. 
 This project aims to explore and expand upon  the [Duolingo SLAM 2018](https://sharedtask.duolingo.com/2018.html) shared task. Further information can be found in the proposal included.
 
